@@ -1,0 +1,10 @@
+[
+  {
+    "label": "CMake: Make",
+    "command": "cmake --build build",
+    "cwd": "$ZED_WORKTREE_ROOT",
+    "show_command": true,
+    "show_summary": true,
+    "use_new_terminal": false,
+  }
+]
