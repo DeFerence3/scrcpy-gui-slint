@@ -1,0 +1,328 @@
+import { ComboBox, LineEdit, TextEdit, CheckBox, ScrollView, Palette } from "std-widgets.slint";
+
+export struct DeviceRow {
+    serial: string,
+    name: string,
+    detail: string,
+    ready: bool,
+    running: bool,
+}
+
+global Theme {
+    out property <color> background: #1e1e2e;
+    out property <color> panel: #292938;
+    out property <color> border: #3b3d50;
+    out property <color> text: #eef0fa;
+    out property <color> muted: #a9afc7;
+    out property <color> accent: #8cafff;
+}
+
+component Action inherits Rectangle {
+    in property <string> text;
+    in property <bool> primary: false;
+    in property <bool> quiet: false;
+    in property <bool> enabled: true;
+    callback clicked;
+    min-height: 36px;
+    min-width: label.preferred-width + 24px;
+    horizontal-stretch: 1;
+    border-radius: 7px;
+    background: !root.enabled ? #252635 : root.primary ? (touch.has-hover ? #a6c0ff : Theme.accent) : touch.has-hover ? #404258 : root.quiet ? transparent : #333546;
+    border-width: focus.has-focus ? 2px : root.quiet ? 0px : 1px;
+    border-color: focus.has-focus ? Theme.accent : root.primary ? Theme.accent : Theme.border;
+    opacity: root.enabled ? 1 : 0.45;
+    accessible-role: button;
+    accessible-label: text;
+    accessible-enabled: enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    forward-focus: focus;
+    label := Text {
+        text: root.text;
+        color: root.primary ? #17213b : Theme.text;
+        font-size: 13px;
+        font-weight: root.primary ? 600 : 400;
+        horizontal-alignment: center;
+        vertical-alignment: center;
+    }
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" || event.text == Key.Return {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { focus.focus(); root.clicked(); }
+    }
+}
+
+component Label inherits Text {
+    color: Theme.muted;
+    font-size: 12px;
+    vertical-alignment: center;
+}
+
+export component MainWindow inherits Window {
+    title: "Scrcpy Tray Tool";
+    preferred-width: 420px;
+    preferred-height: 690px;
+    min-width: 380px;
+    min-height: 660px;
+    no-frame: true;
+    always-on-top: true;
+    background: transparent;
+    default-font-family: "Segoe UI";
+    default-font-size: 13px;
+    in-out property <int> page: 0;
+    in-out property <bool> pinned: false;
+    in-out property <string> scrcpy-path;
+    in-out property <string> shortcut: "Ctrl + Alt + S";
+    in-out property <string> shortcut-edit: "Ctrl + Alt + S";
+    in-out property <string> repository: "DeFerence3/scrcpy-pad-slint";
+    in-out property <bool> auto-update: false;
+    in property <bool> scanning: false;
+    in property <bool> updating: false;
+    in property <bool> update-available: false;
+    in property <int> active-sessions: 0;
+    in property <[DeviceRow]> devices;
+    in property <[string]> template-names;
+    in-out property <int> selected-template: 0;
+    in property <int> default-template: 0;
+    in-out property <int> editing-template: 0;
+    in-out property <string> template-name;
+    in-out property <string> template-arguments;
+    in-out property <string> console-text;
+    in property <string> status-text: "Connect a device with USB debugging enabled.";
+    in property <string> update-status: "Updates not checked";
+    in property <string> scrcpy-version: "scrcpy not configured";
+    in property <string> app-version: "0.1.0";
+
+    callback refresh-devices();
+    callback mirror-device(string);
+    callback stop-device(string);
+    callback quick-mirror();
+    callback stop-all();
+    callback browse-scrcpy();
+    callback detect-scrcpy();
+    callback save-path();
+    callback restart-adb();
+    callback save-shortcut();
+    callback save-update-settings();
+    callback check-updates();
+    callback install-update();
+    callback select-template(int);
+    callback make-default();
+    callback edit-template(int);
+    callback new-template();
+    callback save-template();
+    callback delete-template();
+    callback hide-to-tray();
+    callback quit-app();
+    init => { Palette.color-scheme = dark; }
+
+    Rectangle {
+        border-radius: 14px;
+        border-width: 1px;
+        border-color: #7786b3;
+        background: Theme.background;
+        VerticalLayout {
+            padding: 18px;
+            spacing: 12px;
+            HorizontalLayout {
+                height: 32px;
+                spacing: 9px;
+                Rectangle {
+                    width: 22px;
+                    height: 29px;
+                    border-radius: 4px;
+                    border-width: 2px;
+                    border-color: Theme.accent;
+                    Rectangle { x: 6px; y: 7px; width: 10px; height: 12px; border-radius: 2px; background: Theme.accent; }
+                    Rectangle { x: 8px; y: 23px; width: 6px; height: 2px; background: Theme.accent; }
+                }
+                Text { text: "scrcpy-gui"; color: Theme.text; font-size: 19px; font-weight: 700; vertical-alignment: center; }
+                Text { text: root.active-sessions > 0 ? "● mirroring" : "● ready"; color: #8ad6a0; font-size: 11px; vertical-alignment: center; }
+                Rectangle { horizontal-stretch: 1; }
+                Action { text: root.pinned ? "Unpin" : "Pin"; quiet: true; horizontal-stretch: 0; clicked => { root.pinned = !root.pinned; } }
+                Action { text: "×"; quiet: true; horizontal-stretch: 0; clicked => { root.hide-to-tray(); } }
+            }
+            Rectangle {
+                height: 38px;
+                border-radius: 8px;
+                background: Theme.panel;
+                HorizontalLayout {
+                    spacing: 2px;
+                    Action { text: "Devices"; primary: root.page == 0; quiet: root.page != 0; clicked => { root.page = 0; } }
+                    Action { text: "Settings"; primary: root.page != 0; quiet: root.page == 0; clicked => { root.page = 1; } }
+                }
+            }
+            Rectangle {
+                vertical-stretch: 1;
+                if root.page == 0: VerticalLayout {
+                    spacing: 10px;
+                    HorizontalLayout {
+                        height: 32px;
+                        Label { text: root.scanning ? "Finding devices…" : "Connected devices (" + root.devices.length + ")"; horizontal-stretch: 1; }
+                        Action { text: "↻ Refresh"; quiet: true; enabled: !root.scanning; horizontal-stretch: 0; clicked => { root.refresh-devices(); } }
+                    }
+                    ScrollView {
+                        vertical-stretch: 1;
+                        min-height: 140px;
+                        content-width: self.visible-width;
+                        VerticalLayout {
+                            spacing: 8px;
+                            alignment: start;
+                            if root.devices.length == 0: Rectangle {
+                                height: 130px;
+                                border-width: 1px;
+                                border-color: Theme.border;
+                                border-radius: 8px;
+                                VerticalLayout {
+                                    padding: 16px;
+                                    spacing: 8px;
+                                    alignment: center;
+                                    Text { text: "No devices connected"; color: Theme.text; font-size: 15px; horizontal-alignment: center; }
+                                    Label { text: "Connect your phone, enable USB debugging,\nand accept the authorization prompt."; horizontal-alignment: center; wrap: word-wrap; }
+                                }
+                            }
+                            for device in root.devices: Rectangle {
+                                height: 65px;
+                                border-radius: 8px;
+                                border-width: 1px;
+                                border-color: device.running ? #63947a : Theme.border;
+                                background: #242533;
+                                HorizontalLayout {
+                                    padding: 10px;
+                                    spacing: 10px;
+                                    VerticalLayout {
+                                        horizontal-stretch: 1;
+                                        spacing: 3px;
+                                        Text { text: device.name; color: Theme.text; font-size: 14px; font-weight: 600; overflow: elide; }
+                                        Label { text: device.detail; font-size: 10px; overflow: elide; }
+                                    }
+                                    Action {
+                                        text: device.running ? "■ Stop" : "▷ Mirror";
+                                        width: 94px;
+                                        horizontal-stretch: 0;
+                                        enabled: device.ready || device.running;
+                                        clicked => { if device.running { root.stop-device(device.serial); } else { root.mirror-device(device.serial); } }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    HorizontalLayout {
+                        Label { text: "Template"; horizontal-stretch: 1; }
+                        Action { text: root.selected-template == root.default-template ? "✓ Default" : "Make default"; quiet: true; horizontal-stretch: 0; enabled: root.selected-template != root.default-template; clicked => { root.make-default(); } }
+                    }
+                    ComboBox { model: root.template-names; current-index <=> root.selected-template; selected(value) => { root.select-template(self.current-index); } }
+                    Action { text: "Start Default"; primary: true; enabled: !root.scanning && !root.updating; clicked => { root.quick-mirror(); } }
+                    Label { text: root.shortcut + "  ·  Quick Mirror"; horizontal-alignment: center; font-size: 11px; }
+                }
+                if root.page == 1: ScrollView {
+                    content-width: self.visible-width;
+                    VerticalLayout {
+                        spacing: 9px;
+                        padding-right: 4px;
+                        alignment: start;
+                        Label { text: "Scrcpy executable"; }
+                        LineEdit { text <=> root.scrcpy-path; placeholder-text: "C:\\Tools\\scrcpy\\scrcpy.exe"; accepted => { root.save-path(); } }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Action { text: "Browse…"; clicked => { root.browse-scrcpy(); } }
+                            Action { text: "Detect PATH"; clicked => { root.detect-scrcpy(); } }
+                            Action { text: "Save path"; clicked => { root.save-path(); } }
+                        }
+                        Label { text: "Quick Mirror shortcut"; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            LineEdit { text <=> root.shortcut-edit; placeholder-text: "Ctrl + Alt + S"; accepted => { root.save-shortcut(); } }
+                            Action { text: "Apply"; horizontal-stretch: 0; clicked => { root.save-shortcut(); } }
+                        }
+                        Action { text: "Manage templates  →"; clicked => { root.edit-template(root.selected-template); root.page = 2; } }
+                        Rectangle { height: 1px; background: Theme.border; }
+                        Label { text: "GUI updates · GitHub repository"; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            LineEdit { text <=> root.repository; placeholder-text: "owner/repository"; }
+                            Action { text: "Save"; horizontal-stretch: 0; clicked => { root.save-update-settings(); } }
+                        }
+                        CheckBox { text: "Auto-update this GUI from GitHub"; checked <=> root.auto-update; toggled => { root.save-update-settings(); } }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Action { text: root.updating ? "Working…" : "Check updates"; enabled: !root.updating; clicked => { root.check-updates(); } }
+                            Action { text: "Install & restart"; primary: root.update-available; enabled: root.update-available && !root.updating && !root.scanning && root.active-sessions == 0; clicked => { root.install-update(); } }
+                        }
+                        Label { text: root.update-status; wrap: word-wrap; font-size: 11px; }
+                        Label { text: root.scrcpy-version; overflow: elide; font-size: 11px; }
+                        HorizontalLayout {
+                            spacing: 6px;
+                            Action { text: "Restart ADB"; enabled: !root.scanning && root.active-sessions == 0; clicked => { root.restart-adb(); } }
+                            Action { text: "Quit app"; clicked => { root.quit-app(); } }
+                        }
+                    }
+                }
+                if root.page == 2: VerticalLayout {
+                    spacing: 9px;
+                    alignment: start;
+                    HorizontalLayout {
+                        Label { text: "Manage templates"; horizontal-stretch: 1; }
+                        Action { text: "← Back"; quiet: true; horizontal-stretch: 0; clicked => { root.page = 1; } }
+                    }
+                    ComboBox { model: root.template-names; current-index: root.editing-template; selected(value) => { root.edit-template(self.current-index); } }
+                    Label { text: "Name"; }
+                    LineEdit { text <=> root.template-name; placeholder-text: "My template"; }
+                    Label { text: "scrcpy arguments"; }
+                    LineEdit { text <=> root.template-arguments; placeholder-text: "--max-size=1920 --max-fps=60"; }
+                    Label { text: "Examples: --no-audio, --stay-awake, --turn-screen-off\nQuote paths with spaces. Select the device in Devices."; wrap: word-wrap; font-size: 11px; }
+                    HorizontalLayout {
+                        spacing: 6px;
+                        Action { text: "New"; clicked => { root.new-template(); } }
+                        Action { text: "Delete"; enabled: root.editing-template >= 0 && root.template-names.length > 1; clicked => { root.delete-template(); } }
+                        Action { text: "Save template"; primary: true; clicked => { root.save-template(); } }
+                    }
+                    Rectangle { vertical-stretch: 1; }
+                }
+            }
+            Label { text: root.status-text; wrap: word-wrap; min-height: 30px; font-size: 11px; }
+            HorizontalLayout {
+                height: 24px;
+                Label { text: "Logs"; horizontal-stretch: 1; }
+                Action { text: "Stop all"; quiet: true; enabled: root.active-sessions > 0; horizontal-stretch: 0; clicked => { root.stop-all(); } }
+                Action { text: "Clear"; quiet: true; horizontal-stretch: 0; clicked => { root.console-text = ""; } }
+            }
+            Rectangle {
+                height: 110px;
+                border-radius: 8px;
+                background: #11111c;
+                border-width: 1px;
+                border-color: #303143;
+                TextEdit {
+                    x: 5px; y: 5px;
+                    width: parent.width - 10px; height: parent.height - 10px;
+                    text: root.console-text;
+                    read-only: true;
+                    font-family: "Consolas";
+                    font-size: 11px;
+                    wrap: word-wrap;
+                }
+            }
+            HorizontalLayout {
+                height: 20px;
+                Label { text: "scrcpy-gui  v" + root.app-version; font-size: 10px; horizontal-stretch: 1; }
+                Text {
+                    text: root.update-available ? "● Update available" : "GitHub ↗";
+                    color: root.update-available ? #8ad6a0 : Theme.muted;
+                    font-size: 11px;
+                    vertical-alignment: center;
+                    TouchArea { mouse-cursor: pointer; clicked => { root.page = 1; } }
+                }
+            }
+        }
+    }
+}
