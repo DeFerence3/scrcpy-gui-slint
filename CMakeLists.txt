@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
-project(scrcpy-ui VERSION 0.1.0 LANGUAGES CXX)
+set(SCRCPY_VERSION "0.0.1" CACHE STRING "Application and distribution version")
+project(scrcpy-ui VERSION ${SCRCPY_VERSION} LANGUAGES CXX)
 
 find_package(Slint QUIET)
 if (NOT Slint_FOUND)
@@ -126,6 +127,7 @@ set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT gui)
 include(InstallRequiredSystemLibraries)
 set(CPACK_GENERATOR ZIP)
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
 # Keep the portable ZIP for the updater; `cpack -G NSIS` builds the installer.
 # Our small template uses HKCU consistently, even when run by an administrator.
 set(CPACK_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")

@@ -1,0 +1,121 @@
+name: Build distribution
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: distribution-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # The tray, hotkeys, process helpers, and updater currently require Windows.
+  windows:
+    name: Windows x64
+    runs-on: windows-2022
+    timeout-minutes: 60
+    defaults:
+      run:
+        shell: pwsh
+    env:
+      CARGO_BUILD_JOBS: '2'
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Check out tagged source
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Read release version
+        run: |
+          if ($env:GITHUB_REF_NAME -cnotmatch '^v(\d+\.\d+\.\d+(?:\.\d+)?)$') {
+              throw 'Use vMAJOR.MINOR.PATCH (or vMAJOR.MINOR.PATCH.REVISION), as required by the updater.'
+          }
+          "RELEASE_VERSION=$($Matches[1])" >> $env:GITHUB_ENV
+
+      - name: Check out pinned Slint source
+        uses: actions/checkout@v7
+        with:
+          repository: slint-ui/slint
+          ref: v1.18.1
+          path: build/deps/slint
+          persist-credentials: false
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          rustup default stable
+
+      - name: Locate NSIS
+        run: |
+          $nsis = "${env:ProgramFiles(x86)}/NSIS/makensis.exe"
+          if (!(Test-Path -LiteralPath $nsis)) {
+              throw "NSIS was not found on the Windows runner: $nsis"
+          }
+          "NSIS_EXECUTABLE=$nsis" >> $env:GITHUB_ENV
+
+      - name: Configure Release
+        run: >-
+          cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+          "-DSCRCPY_VERSION=$env:RELEASE_VERSION"
+          "-DFETCHCONTENT_SOURCE_DIR_SLINT=$env:GITHUB_WORKSPACE/build/deps/slint"
+          "-DSCRCPY_MAKENSIS_EXECUTABLE=$env:NSIS_EXECUTABLE"
+          -DBUILD_TESTING=ON
+          -DSLINT_FEATURE_BACKEND_QT=OFF
+          -DSLINT_FEATURE_RENDERER_SKIA=OFF
+          -DSLINT_FEATURE_RENDERER_SOFTWARE=ON
+
+      - name: Build Release
+        run: cmake --build build --config Release --parallel 2
+
+      - name: Run tests
+        env:
+          SLINT_BACKEND: winit-software
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package portable ZIP
+        run: cpack --config build/CPackConfig.cmake -C Release -G ZIP -B build/packages
+
+      - name: Package installer
+        run: >-
+          cpack --config build/CPackConfig.cmake -C Release -G NSIS -B build/packages
+          "-DCPACK_NSIS_EXECUTABLE=$env:NSIS_EXECUTABLE"
+
+      - name: Write checksums
+        run: |
+          $packages = @(
+              'build/packages/scrcpy-gui-windows-x64.zip',
+              'build/packages/scrcpy-gui-windows-x64.exe'
+          )
+          $checksums = foreach ($package in $packages) {
+              $hash = Get-FileHash -LiteralPath $package -Algorithm SHA256
+              '{0}  {1}' -f $hash.Hash.ToLowerInvariant(), (Split-Path $package -Leaf)
+          }
+          $checksums | Set-Content -LiteralPath build/packages/SHA256SUMS.txt -Encoding utf8
+
+      - name: Upload distribution
+        uses: actions/upload-artifact@v7
+        with:
+          name: scrcpy-gui-${{ github.ref_name }}-windows-x64
+          path: |
+            build/packages/scrcpy-gui-windows-x64.zip
+            build/packages/scrcpy-gui-windows-x64.exe
+            build/packages/SHA256SUMS.txt
+          if-no-files-found: error
+          compression-level: 0
+
+      - name: Upload test logs and previews
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: test-results-${{ github.ref_name }}-windows-x64
+          path: |
+            build/Testing/Temporary/
+            build/ui-previews/
+          if-no-files-found: ignore
