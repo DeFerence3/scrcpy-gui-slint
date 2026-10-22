@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-set(SCRCPY_VERSION "0.0.1" CACHE STRING "Application and distribution version")
+set(SCRCPY_VERSION "0.0.2" CACHE STRING "Application and distribution version")
 project(scrcpy-ui VERSION ${SCRCPY_VERSION} LANGUAGES CXX)
 
 find_package(Slint QUIET)

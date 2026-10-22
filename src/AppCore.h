@@ -4,7 +4,7 @@
 #include <vector>
 
 namespace app {
-inline constexpr char update_repository[] = "Deference/scrcpy-gui-slint";
+inline constexpr char update_repository[] = "DeFerence3/scrcpy-gui-slint";
 
 struct Device {
   std::string serial, name, state, connection;

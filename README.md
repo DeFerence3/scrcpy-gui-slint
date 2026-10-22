@@ -24,7 +24,7 @@ Closing the window hides it to the tray. **Pin** keeps it open when focus change
 - Customize the global Quick Mirror shortcut.
 - Keep the app in the tray, with optional window pinning and automatic startup through the installer.
 - View logs, detect scrcpy on PATH, and restart ADB from Settings.
-- Check for GUI updates from `Deference/scrcpy-gui-slint`, or enable automatic updates. These updates do not replace scrcpy.
+- Check for GUI updates from `DeFerence3/scrcpy-gui-slint`, or enable automatic updates. These updates do not replace scrcpy.
 
 Preferences are stored in `%APPDATA%\scrcpy-tray\settings.dat`.
 
@@ -59,3 +59,18 @@ cpack --config build/CPackConfig.cmake -C Release -G NSIS -B build/packages
 ```
 
 Packages are written to `build/packages`. To set the app and package version, add `"-DSCRCPY_VERSION=0.1.1"` when configuring CMake.
+
+## Publish a release
+
+Push a new version tag on the commit to release:
+
+```powershell
+git tag v0.0.3
+git push origin v0.0.3
+```
+
+Use `vMAJOR.MINOR.PATCH` (or `vMAJOR.MINOR.PATCH.REVISION`) and a version higher than the previous release. The distribution workflow builds and tests Windows x64, packages the portable ZIP and installer, then publishes a GitHub release with both packages and `SHA256SUMS.txt`. The app version comes from the tag. Publishing uses the built-in `GITHUB_TOKEN` with `contents: write` in the release job; no PAT secret is required.
+
+The app checks the latest published, non-prerelease GitHub release and offers an update only when its version is newer. Keep the asset named `scrcpy-gui-windows-x64.zip`; the updater verifies its GitHub SHA-256 digest before installation. Workflow artifacts alone are not visible to the updater.
+
+To test update detection locally, configure a build with a lower version, such as `"-DSCRCPY_VERSION=0.0.1"`, rebuild, and use **Settings → Check updates**. Builds made before the repository address was corrected must first be rebuilt or manually replaced with a current release.

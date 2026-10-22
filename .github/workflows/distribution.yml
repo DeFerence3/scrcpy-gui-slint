@@ -1,4 +1,4 @@
-name: Build distribution
+name: Build and release distribution
 
 on:
   push:
@@ -119,3 +119,36 @@ jobs:
             build/Testing/Temporary/
             build/ui-previews/
           if-no-files-found: ignore
+
+  release:
+    name: Publish GitHub release
+    needs: windows
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download tested distribution
+        uses: actions/download-artifact@v8
+        with:
+          name: scrcpy-gui-${{ github.ref_name }}-windows-x64
+          path: packages
+
+      - name: Verify distribution checksums
+        working-directory: packages
+        run: sha256sum --check SHA256SUMS.txt
+
+      # gh uploads all assets to a draft before publishing the stable release.
+      # The updater uses releases/latest and the portable ZIP's GitHub digest.
+      - name: Publish release with distribution assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          packages/scrcpy-gui-windows-x64.zip
+          packages/scrcpy-gui-windows-x64.exe
+          packages/SHA256SUMS.txt
+          --verify-tag
+          --title "scrcpy-gui $GITHUB_REF_NAME"
+          --generate-notes
