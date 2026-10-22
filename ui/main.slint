@@ -83,7 +83,6 @@ export component MainWindow inherits Window {
     in-out property <string> scrcpy-path;
     in-out property <string> shortcut: "Ctrl + Alt + S";
     in-out property <string> shortcut-edit: "Ctrl + Alt + S";
-    in-out property <string> repository: "DeFerence3/scrcpy-gui-slint";
     in-out property <bool> auto-update: false;
     in property <bool> scanning: false;
     in property <bool> updating: false;
@@ -246,12 +245,7 @@ export component MainWindow inherits Window {
                         }
                         Action { text: "Manage templates  →"; clicked => { root.edit-template(root.selected-template); root.page = 2; } }
                         Rectangle { height: 1px; background: Theme.border; }
-                        Label { text: "GUI updates · GitHub repository"; }
-                        HorizontalLayout {
-                            spacing: 6px;
-                            LineEdit { text <=> root.repository; placeholder-text: "owner/repository"; }
-                            Action { text: "Save"; horizontal-stretch: 0; clicked => { root.save-update-settings(); } }
-                        }
+                        Label { text: "GUI updates"; }
                         CheckBox { text: "Auto-update this GUI from GitHub"; checked <=> root.auto-update; toggled => { root.save-update-settings(); } }
                         HorizontalLayout {
                             spacing: 6px;

@@ -36,7 +36,7 @@ function Invoke-RestMethod {
     $digest = if ($Case -eq 'no-digest') { '' } else { "sha256:$global:fixtureDigest" }
     return [pscustomobject]@{ tag_name = $tag; assets = @([pscustomobject]@{
         name = $name; digest = $digest; size = (Get-Item -LiteralPath $global:fixtureArchive).Length
-        browser_download_url = 'https://github.com/DeFerence3/scrcpy-gui-slint/releases/download/v0.2.0/scrcpy-gui-windows-x64.zip'
+        browser_download_url = 'https://github.com/Deference/scrcpy-gui-slint/releases/download/v0.2.0/scrcpy-gui-windows-x64.zip'
     }) }
 }
 function Invoke-WebRequest {
@@ -55,7 +55,7 @@ if ($Case -eq 'apply') {
     exit $LASTEXITCODE
 }
 $mode = if ($Case -in @('available', 'current', 'missing-asset', 'network')) { 'Check' } else { 'Stage' }
-& $UpdateScript -Mode $mode -Repository 'DeFerence3/scrcpy-gui-slint' -CurrentVersion '0.1.0' -ExpectedVersion '0.2.0'
+& $UpdateScript -Mode $mode -Repository 'Deference/scrcpy-gui-slint' -CurrentVersion '0.1.0' -ExpectedVersion '0.2.0'
 exit $LASTEXITCODE
 '@ | Set-Content -LiteralPath $testScript
 

@@ -426,23 +426,12 @@ public:
              "settings.");
       return;
     }
-    auto repo = app::trim(text(ui->get_repository()));
-    if (!app::valid_repository(repo)) {
-      status("Enter a GitHub repository as owner/repository.");
-      ui->set_auto_update(settings.auto_update);
-      return;
-    }
-    auto previous = settings;
-    settings.repository = repo;
+    auto previous = settings.auto_update;
     settings.auto_update = ui->get_auto_update();
     if (!save()) {
-      settings = previous;
+      settings.auto_update = previous;
       ui->set_auto_update(settings.auto_update);
       return;
-    }
-    if (repo != previous.repository) {
-      available_version.clear();
-      ui->set_update_available(false);
     }
     status("Update settings saved.");
     if (settings.auto_update)
@@ -469,10 +458,9 @@ public:
     auto_install_attempted = install;
     ui->set_update_status(install ? "Downloading and verifying the GUI update…"
                                   : "Checking GitHub releases…");
-    auto repo = settings.repository;
     auto expected = available_version;
     auto weak = weak_from_this();
-    std::thread([weak, script, repo, expected, install] {
+    std::thread([weak, script, expected, install] {
       std::vector<std::wstring> args{L"-NoProfile",
                                      L"-NonInteractive",
                                      L"-ExecutionPolicy",
@@ -482,7 +470,7 @@ public:
                                      L"-Mode",
                                      install ? L"Stage" : L"Check",
                                      L"-Repository",
-                                     app::wide(repo),
+                                     app::wide(app::update_repository),
                                      L"-CurrentVersion",
                                      app::wide(APP_VERSION),
                                      L"-ExpectedVersion",
@@ -572,7 +560,6 @@ public:
     if (!error.empty())
       log(error + "\n");
     ui->set_app_version(APP_VERSION);
-    ui->set_repository(slint::SharedString(settings.repository));
     ui->set_auto_update(settings.auto_update);
     ui->set_selected_template(settings.default_template);
     publish_templates();

@@ -59,16 +59,6 @@ std::vector<Device> parse_devices(const std::string &text) {
   }
   return devices;
 }
-bool valid_repository(const std::string &text) {
-  auto slash = text.find('/');
-  if (slash == 0 || slash == std::string::npos || slash == text.size() - 1 ||
-      text.find('/', slash + 1) != std::string::npos)
-    return false;
-  return text.size() <= 200 &&
-         text.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRST"
-                                "UVWXYZ0123456789-._/") == std::string::npos &&
-         text.find("..") == std::string::npos;
-}
 bool load_settings(const std::filesystem::path &path, Settings &settings,
                    std::string &error) {
   if (!std::filesystem::exists(path))
@@ -78,10 +68,14 @@ bool load_settings(const std::filesystem::path &path, Settings &settings,
   std::string magic;
   int version = 0, count = 0;
   in >> magic >> version;
-  in >> std::quoted(next.scrcpy_path) >> std::quoted(next.shortcut) >>
-      std::quoted(next.repository) >> next.auto_update >>
-      next.default_template >> count;
-  if (!in || magic != "SCRCPY_PAD" || version != 1 || count < 1 ||
+  in >> std::quoted(next.scrcpy_path) >> std::quoted(next.shortcut);
+  if (version == 1) {
+    // Older settings included a user-selected update repository. Ignore it.
+    std::string legacy_repository;
+    in >> std::quoted(legacy_repository);
+  }
+  in >> next.auto_update >> next.default_template >> count;
+  if (!in || magic != "SCRCPY_PAD" || (version != 1 && version != 2) || count < 1 ||
       count > 100) {
     error = "Settings file is invalid; using defaults without overwriting it.";
     return false;
@@ -99,8 +93,6 @@ bool load_settings(const std::filesystem::path &path, Settings &settings,
   }
   if (next.default_template < 0 || next.default_template >= count)
     next.default_template = 0;
-  if (!valid_repository(next.repository))
-    next.repository = Settings{}.repository;
   settings = std::move(next);
   return true;
 }
@@ -111,10 +103,9 @@ bool save_settings(const std::filesystem::path &path, const Settings &settings,
     auto temp = path;
     temp += ".tmp";
     std::ofstream out(temp, std::ios::binary | std::ios::trunc);
-    out << "SCRCPY_PAD 1\n"
+    out << "SCRCPY_PAD 2\n"
         << std::quoted(settings.scrcpy_path) << '\n'
         << std::quoted(settings.shortcut) << '\n'
-        << std::quoted(settings.repository) << '\n'
         << settings.auto_update << ' ' << settings.default_template << ' '
         << settings.templates.size() << '\n';
     for (const auto &t : settings.templates)

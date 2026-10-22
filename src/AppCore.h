@@ -4,6 +4,8 @@
 #include <vector>
 
 namespace app {
+inline constexpr char update_repository[] = "Deference/scrcpy-gui-slint";
+
 struct Device {
   std::string serial, name, state, connection;
   bool ready() const { return state == "device"; }
@@ -14,7 +16,6 @@ struct Template {
 struct Settings {
   std::string scrcpy_path;
   std::string shortcut = "Ctrl + Alt + S";
-  std::string repository = "DeFerence3/scrcpy-gui-slint";
   bool auto_update = false;
   int default_template = 0;
   std::vector<Template> templates = {
@@ -24,7 +25,6 @@ struct Settings {
 };
 std::vector<Device> parse_devices(const std::string &text);
 std::string trim(std::string text);
-bool valid_repository(const std::string &text);
 bool load_settings(const std::filesystem::path &path, Settings &settings,std::string &error);
 bool save_settings(const std::filesystem::path &path, const Settings &settings,std::string &error);
 } // namespace app
