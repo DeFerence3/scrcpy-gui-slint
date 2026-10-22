@@ -26,7 +26,7 @@ The bundled presets use `--max-size=1920 --max-fps=60`, a lighter 1280px/30fps p
 
 ## GUI updates
 
-Updates target **this GUI**, not scrcpy. The default public repository is `DeFerence3/scrcpy-pad-slint`; change it with `owner/repository` in Settings. No published release (or a private repository) is reported without treating it as an application failure.
+Updates target **this GUI**, not scrcpy. The default public repository is `DeFerence3/scrcpy-gui-slint`; change it with `owner/repository` in Settings. No published release (or a private repository) is reported without treating it as an application failure.
 
 The app checks the latest stable GitHub release at startup and every six hours. **Check updates** runs a manual check. **Auto-update this GUI from GitHub** is opt-in and persists; installation waits until mirroring and device discovery are idle. You can also use **Install & restart**. A failed automatic installation is retried after the next check, rather than in a rapid loop.
 
@@ -43,7 +43,7 @@ The updater downloads the matching architecture's portable ZIP, verifies GitHub'
    cpack --config build/CPackConfig.cmake -C Release -B build/packages
    ```
 
-3. Publish a stable GitHub release tagged `v0.1.1` in `DeFerence3/scrcpy-pad-slint`. Attach `scrcpy-gui-windows-x64.zip` from `build/packages` without renaming it. ARM64 and x86 builds use `scrcpy-gui-windows-arm64.zip` and `scrcpy-gui-windows-x86.zip`.
+3. Publish a stable GitHub release tagged `v0.1.1` in `DeFerence3/scrcpy-gui-slint`. Attach `scrcpy-gui-windows-x64.zip` from `build/packages` without renaming it. ARM64 and x86 builds use `scrcpy-gui-windows-arm64.zip` and `scrcpy-gui-windows-x86.zip`.
 4. The package is flat and includes `scrcpy-ui.exe`, `slint_cpp.dll`, MSVC runtime DLLs, `update.ps1`, and documentation. Upload through GitHub's release assets API/UI so GitHub supplies the asset `digest`; the updater refuses unverified assets.
 
 Nothing is published automatically by this project. The configured repository currently needs its first release before a real update can be downloaded.

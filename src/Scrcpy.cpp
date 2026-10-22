@@ -5,19 +5,20 @@
 #include <thread>
 
 namespace {
-bool is_file(const std::wstring &path) {
-  DWORD attrs = GetFileAttributesW(path.c_str());
-  return attrs != INVALID_FILE_ATTRIBUTES &&
-         !(attrs & FILE_ATTRIBUTE_DIRECTORY);
-}
-std::wstring find_on_path(const wchar_t *name) {
-  wchar_t buffer[32768]{};
-  DWORD count = SearchPathW(nullptr, name, L".exe", 32768, buffer, nullptr);
-  return count && count < 32768 ? buffer : L"";
-}
+    bool is_file(const std::wstring &path) {
+      DWORD attrs = GetFileAttributesW(path.c_str());
+      return attrs != INVALID_FILE_ATTRIBUTES &&
+             !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+    }
+    std::wstring find_on_path(const wchar_t *name) {
+      wchar_t buffer[32768]{};
+      DWORD count = SearchPathW(nullptr, name, L".exe", 32768, buffer, nullptr);
+      return count && count < 32768 ? buffer : L"";
+    }
 } // namespace
-Scrcpy::Scrcpy(Output output, Session session)
-    : output_(std::move(output)), session_(std::move(session)) {}
+
+Scrcpy::Scrcpy(Output output, Session session): output_(std::move(output)), session_(std::move(session)) {}
+
 Scrcpy::~Scrcpy() { stop(); }
 bool Scrcpy::set_path(std::wstring path) {
   auto extension = std::filesystem::path(path).extension().wstring();

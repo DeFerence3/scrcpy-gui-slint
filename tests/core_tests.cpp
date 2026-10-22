@@ -21,7 +21,7 @@ int main(int argc, char **argv) {
     require(devices[0].name == "Pixel 7 Pro" && devices[0].ready(), "ADB model parsing failed");
     require(devices[1].connection == "Wireless" && !devices[2].ready() && !devices[3].ready(), "Device eligibility failed");
     require(app::parse_devices("error: device not found\n").empty(), "Error parsed as device");
-    require(app::valid_repository("DeFerence3/scrcpy-pad-slint") && !app::valid_repository("../bad") && !app::valid_repository("https://github.com/o/r"), "Repository validation failed");
+    require(app::valid_repository("DeFerence3/scrcpy-gui-slint") && !app::valid_repository("../bad") && !app::valid_repository("https://github.com/o/r"), "Repository validation failed");
     UINT modifiers, key; std::string canonical;
     require(app::parse_hotkey("shift + Ctrl + f12", modifiers, key, canonical) && key == VK_F12 && canonical == "Ctrl + Shift + F12", "Shortcut parsing failed");
     for (auto invalid : {"S", "Ctrl +", "Ctrl + S + T", "Ctrl + Ctrl + S", "Alt + F25", "Win + F999999999"})

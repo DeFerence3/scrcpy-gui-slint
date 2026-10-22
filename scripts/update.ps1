@@ -1,6 +1,6 @@
 param(
     [ValidateSet('Check', 'Stage', 'Apply')][string]$Mode = 'Check',
-    [string]$Repository = 'DeFerence3/scrcpy-pad-slint',
+    [string]$Repository = 'DeFerence3/scrcpy-gui-slint',
     [string]$CurrentVersion = '0.1.0',
     [string]$ExpectedVersion = '',
     [string]$Architecture = 'x64',
