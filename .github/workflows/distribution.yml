@@ -125,8 +125,6 @@ jobs:
     name: Publish GitHub release
     needs: windows
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
 
     steps:
       - name: Download tested distribution
@@ -143,7 +141,7 @@ jobs:
       # The updater uses releases/latest and the portable ZIP's GitHub digest.
       - name: Publish release with distribution assets
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ secrets.PAT }}
           GH_REPO: ${{ github.repository }}
         run: >-
           gh release create "$GITHUB_REF_NAME"

@@ -69,7 +69,7 @@ git tag v0.0.3
 git push origin v0.0.3
 ```
 
-Use `vMAJOR.MINOR.PATCH` (or `vMAJOR.MINOR.PATCH.REVISION`) and a version higher than the previous release. The distribution workflow builds and tests Windows x64, packages the portable ZIP and installer, then publishes a GitHub release with both packages and `SHA256SUMS.txt`. The app version comes from the tag. Publishing uses the built-in `GITHUB_TOKEN` with `contents: write` in the release job; no PAT secret is required.
+Use `vMAJOR.MINOR.PATCH` (or `vMAJOR.MINOR.PATCH.REVISION`) and a version higher than the previous release. The distribution workflow builds and tests Windows x64, packages the portable ZIP and installer, then publishes a GitHub release with both packages and `SHA256SUMS.txt`. The app version comes from the tag. Publishing uses the repository's `PAT` Actions secret, which must have write access to repository contents (or the `repo` scope for a classic PAT).
 
 The app checks the latest published, non-prerelease GitHub release and offers an update only when its version is newer. Keep the asset named `scrcpy-gui-windows-x64.zip`; the updater verifies its GitHub SHA-256 digest before installation. Workflow artifacts alone are not visible to the updater.
 
