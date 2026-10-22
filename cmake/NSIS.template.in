@@ -1,0 +1,91 @@
+; Per-user installer. The portable ZIP remains the GUI updater's payload.
+Unicode true
+RequestExecutionLevel user
+!include "MUI2.nsh"
+!define INST_DIR "@CPACK_TEMPORARY_DIRECTORY@"
+
+Name "@CPACK_NSIS_PACKAGE_NAME@"
+OutFile "@CPACK_TOPLEVEL_DIRECTORY@/@CPACK_OUTPUT_FILE_NAME@"
+InstallDir "$LOCALAPPDATA\Programs\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
+InstallDirRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" "InstallLocation"
+SetCompressor /SOLID lzma
+
+!define UninstallKey "Software\Microsoft\Windows\CurrentVersion\Uninstall\@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@"
+!define RunKey "Software\Microsoft\Windows\CurrentVersion\Run"
+!define MUI_ABORTWARNING
+!define MUI_WELCOMEPAGE_TEXT "Setup installs scrcpy-gui for your Windows account. It starts in the tray after setup and automatically whenever you sign in."
+!define MUI_FINISHPAGE_TEXT "scrcpy-gui is running in your tray and will start automatically when you sign in. Open its tray icon to configure scrcpy or start mirroring."
+!insertmacro MUI_PAGE_WELCOME
+!insertmacro MUI_PAGE_LICENSE "@CPACK_RESOURCE_FILE_LICENSE@"
+!insertmacro MUI_PAGE_DIRECTORY
+!insertmacro MUI_PAGE_INSTFILES
+!insertmacro MUI_PAGE_FINISH
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
+!insertmacro MUI_LANGUAGE "English"
+
+; Do not replace or delete a running GUI's DLLs. Silent setup fails as well.
+!macro RequireAppClosed
+  retry_close:
+    FindWindow $0 "ScrcpyTrayMsgWnd"
+    StrCmp $0 0 app_closed
+    MessageBox MB_RETRYCANCEL|MB_ICONEXCLAMATION "Quit scrcpy-gui from its tray menu before continuing." /SD IDCANCEL IDRETRY retry_close
+    SetErrorLevel 1
+    Quit
+  app_closed:
+!macroend
+
+Section "scrcpy-gui"
+  SetShellVarContext current
+  !insertmacro RequireAppClosed
+  SetOutPath "$INSTDIR"
+  @CPACK_NSIS_FULL_INSTALL@
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
+
+  WriteRegStr HKCU "${UninstallKey}" "DisplayName" "@CPACK_NSIS_DISPLAY_NAME@"
+  WriteRegStr HKCU "${UninstallKey}" "DisplayVersion" "@CPACK_PACKAGE_VERSION@"
+  WriteRegStr HKCU "${UninstallKey}" "Publisher" "@CPACK_PACKAGE_VENDOR@"
+  WriteRegStr HKCU "${UninstallKey}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "${UninstallKey}" "DisplayIcon" "$INSTDIR\scrcpy-ui.exe"
+  WriteRegStr HKCU "${UninstallKey}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
+  WriteRegStr HKCU "${UninstallKey}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
+  WriteRegDWORD HKCU "${UninstallKey}" "NoModify" 1
+  WriteRegDWORD HKCU "${UninstallKey}" "NoRepair" 1
+
+  CreateDirectory "$SMPROGRAMS\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
+  CreateShortCut "$SMPROGRAMS\@CPACK_PACKAGE_INSTALL_DIRECTORY@\scrcpy-gui.lnk" "$INSTDIR\scrcpy-ui.exe"
+  CreateShortCut "$SMPROGRAMS\@CPACK_PACKAGE_INSTALL_DIRECTORY@\Uninstall.lnk" "$INSTDIR\Uninstall.exe"
+  ClearErrors
+  WriteRegStr HKCU "${RunKey}" "@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@" '"$INSTDIR\scrcpy-ui.exe" --startup'
+  IfErrors 0 startup_registered
+    MessageBox MB_OK|MB_ICONSTOP "Could not register scrcpy-gui to start at sign-in." /SD IDOK
+    SetErrorLevel 1
+    Quit
+  startup_registered:
+  Exec '"$INSTDIR\scrcpy-ui.exe" --startup'
+  IfErrors 0 app_started
+    MessageBox MB_OK|MB_ICONEXCLAMATION "Setup finished, but scrcpy-gui could not start. Open it from the Start menu." /SD IDOK
+  app_started:
+SectionEnd
+
+Section "Uninstall"
+  SetShellVarContext current
+  !insertmacro RequireAppClosed
+  ; An older installation must not remove a newer installation's registration.
+  ReadRegStr $0 HKCU "${RunKey}" "@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@"
+  StrCmp $0 '"$INSTDIR\scrcpy-ui.exe" --startup' 0 keep_startup
+    DeleteRegValue HKCU "${RunKey}" "@CPACK_PACKAGE_INSTALL_REGISTRY_KEY@"
+  keep_startup:
+  ReadRegStr $0 HKCU "${UninstallKey}" "InstallLocation"
+  StrCmp $0 "$INSTDIR" 0 keep_registration
+    DeleteRegKey HKCU "${UninstallKey}"
+    Delete "$SMPROGRAMS\@CPACK_PACKAGE_INSTALL_DIRECTORY@\scrcpy-gui.lnk"
+    Delete "$SMPROGRAMS\@CPACK_PACKAGE_INSTALL_DIRECTORY@\Uninstall.lnk"
+    RMDir "$SMPROGRAMS\@CPACK_PACKAGE_INSTALL_DIRECTORY@"
+  keep_registration:
+  ; Only remove packaged files; preserve settings in AppData and unrelated files.
+  @CPACK_NSIS_DELETE_FILES@
+  @CPACK_NSIS_DELETE_DIRECTORIES@
+  Delete "$INSTDIR\Uninstall.exe"
+  RMDir "$INSTDIR"
+SectionEnd

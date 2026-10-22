@@ -82,12 +82,29 @@ if(BUILD_TESTING)
   add_executable(scrcpy-backend-tests tests/backend_tests.cpp src/Scrcpy.cpp)
   target_link_libraries(scrcpy-backend-tests PRIVATE scrcpy-core)
   add_test(NAME scrcpy-backend COMMAND scrcpy-backend-tests $<TARGET_FILE:scrcpy-tool-fixture>)
+  add_executable(scrcpy-startup-tests tests/startup_tests.cpp)
+  target_link_libraries(scrcpy-startup-tests PRIVATE scrcpy-core)
+  add_dependencies(scrcpy-startup-tests scrcpy-ui scrcpy-tool-fixture)
+  add_test(NAME scrcpy-startup COMMAND scrcpy-startup-tests $<TARGET_FILE:scrcpy-ui>
+    $<TARGET_FILE:scrcpy-tool-fixture> "${CMAKE_BINARY_DIR}/startup-tests")
+  set_tests_properties(scrcpy-startup PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 30)
   find_program(POWERSHELL_EXECUTABLE powershell)
   if(POWERSHELL_EXECUTABLE)
     add_test(NAME scrcpy-updater COMMAND "${POWERSHELL_EXECUTABLE}" -NoProfile -NonInteractive -ExecutionPolicy Bypass
       -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/updater_tests.ps1"
       -UpdateScript "${CMAKE_CURRENT_SOURCE_DIR}/scripts/update.ps1"
       -Fixture $<TARGET_FILE:scrcpy-tool-fixture> -WorkDirectory "${CMAKE_BINARY_DIR}/updater-tests")
+    find_program(SCRCPY_MAKENSIS_EXECUTABLE makensis
+      HINTS "$ENV{ProgramFiles}/NSIS" "$ENV{ProgramFiles\(x86\)}/NSIS"
+      PATH_SUFFIXES Bin)
+    if(SCRCPY_MAKENSIS_EXECUTABLE)
+      add_test(NAME scrcpy-installer COMMAND "${POWERSHELL_EXECUTABLE}" -NoProfile -NonInteractive -ExecutionPolicy Bypass
+        -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/installer_tests.ps1"
+        -Template "${CMAKE_CURRENT_SOURCE_DIR}/cmake/NSIS.template.in"
+        -MakeNsis "${SCRCPY_MAKENSIS_EXECUTABLE}" -Fixture $<TARGET_FILE:scrcpy-tool-fixture>
+        -WorkDirectory "${CMAKE_BINARY_DIR}/installer-tests")
+      set_tests_properties(scrcpy-installer PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 90)
+    endif()
   endif()
   if(SLINT_FEATURE_RENDERER_SOFTWARE)
     add_executable(scrcpy-ui-preview tests/ui_preview.cpp)
@@ -109,6 +126,16 @@ set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
 set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT gui)
 include(InstallRequiredSystemLibraries)
 set(CPACK_GENERATOR ZIP)
+# Keep the portable ZIP for the updater; `cpack -G NSIS` builds the installer.
+# Our small template uses HKCU consistently, even when run by an administrator.
+set(CPACK_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
+set(CPACK_MONOLITHIC_INSTALL ON)
+set(CPACK_PACKAGE_VENDOR "scrcpy-gui")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "scrcpy-gui")
+set(CPACK_PACKAGE_INSTALL_REGISTRY_KEY "scrcpy-gui")
+set(CPACK_NSIS_DISPLAY_NAME "scrcpy-gui")
+set(CPACK_NSIS_PACKAGE_NAME "scrcpy-gui")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE.txt")
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY OFF)
 set(CPACK_INSTALL_CMAKE_PROJECTS "${CMAKE_BINARY_DIR};scrcpy-ui;gui;/")
 if(CMAKE_SYSTEM_PROCESSOR MATCHES "ARM64|arm64|aarch64")

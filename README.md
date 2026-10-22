@@ -4,12 +4,18 @@ A compact Windows tray app for [scrcpy](https://github.com/Genymobile/scrcpy), b
 
 ## Use
 
+Install the `scrcpy-gui-windows-<architecture>.exe` setup package to run automatically. Setup installs for your Windows account (no administrator rights needed), starts the app in the tray immediately, and registers it to start at every sign-in. Automatic launches stay in the tray without opening a popup or starting a mirror session. Click the tray icon to configure scrcpy on first use.
+
+You can disable automatic startup in **Task Manager → Startup apps → scrcpy-gui**. **Quit** stops it for the current session; it starts again at the next sign-in unless disabled. Uninstalling through Windows **Installed apps** removes the startup entry and preserves your preferences. Quit the tray app before reinstalling or uninstalling. This is a background app in your Windows session, so it runs after sign-in rather than before login as a Windows service would.
+
+The portable ZIP remains available for manual use and GUI updates. Extracting it or launching its executable does not register automatic startup.
+
 1. Install scrcpy, including its adjacent `adb.exe`, or put both tools on PATH.
 2. Launch `scrcpy-ui.exe`. The app restores your saved executable or detects `SCRCPY` / PATH. Use **Settings → Browse** if it cannot find scrcpy.
 3. Enable USB debugging on your phone and accept its authorization prompt. Connected USB and wireless ADB devices appear in **Devices**; offline and unauthorized devices are shown but cannot be started.
 4. Choose a template and click a device's **Mirror** button. **Stop** affects that device; **Stop all** affects only this app's mirror sessions.
 
-**Start Default**, the tray's **Quick Mirror** action, and **Ctrl + Alt + S** use the saved default template. With one ready device they start it immediately; with several, the popup asks you to choose. Startup also attempts Quick Mirror when scrcpy is configured. Launching a second instance delegates Quick Mirror to the existing instance.
+**Start Default**, the tray's **Quick Mirror** action, and **Ctrl + Alt + S** use the saved default template. With one ready device they start it immediately; with several, the popup asks you to choose. Manual launches also attempt Quick Mirror when scrcpy is configured. Launching a second instance manually delegates Quick Mirror to the existing instance; automatic startup (`--startup`) leaves an existing instance alone.
 
 The window hides when focus leaves it. **Pin** keeps it open. Closing the window hides it to the tray; use **Quit app** or the tray's **Quit** command to exit. Device discovery refreshes every five seconds while the Devices tab is visible. Logs are bounded to avoid unbounded memory growth.
 
@@ -46,6 +52,14 @@ The updater downloads the matching architecture's portable ZIP, verifies GitHub'
 3. Publish a stable GitHub release tagged `v0.1.1` in `DeFerence3/scrcpy-gui-slint`. Attach `scrcpy-gui-windows-x64.zip` from `build/packages` without renaming it. ARM64 and x86 builds use `scrcpy-gui-windows-arm64.zip` and `scrcpy-gui-windows-x86.zip`.
 4. The package is flat and includes `scrcpy-ui.exe`, `slint_cpp.dll`, MSVC runtime DLLs, `update.ps1`, and documentation. Upload through GitHub's release assets API/UI so GitHub supplies the asset `digest`; the updater refuses unverified assets.
 
+To also publish the installer with automatic startup, install [NSIS 3.03 or newer](https://nsis.sourceforge.io/Download), then run:
+
+```powershell
+cpack --config build/CPackConfig.cmake -C Release -G NSIS -B build/packages
+```
+
+Attach the resulting `scrcpy-gui-windows-x64.exe` (or matching architecture) alongside the ZIP. Keep the ZIP attached: installed copies still use it for in-place updates, and their startup registration continues pointing to the same executable.
+
 Nothing is published automatically by this project. The configured repository currently needs its first release before a real update can be downloaded.
 
 ## Build on Windows
@@ -61,6 +75,6 @@ ctest --test-dir build --output-on-failure
 
 For a Visual Studio generator, add `--config Release` and run `build\app\Release\scrcpy-ui.exe`. Keep the executable, its DLLs and `update.ps1` together. Quit older running builds before launching the new build.
 
-Tests cover device parsing, settings persistence, argument quoting, shortcut validation, process failures/cancellation, mocked multi-device mirroring, and updater fixtures. When Slint's software renderer is available, `scrcpy-ui-preview` renders Devices, Settings, Templates and empty states without opening native windows or accessing a phone; PPM previews are written to `build/ui-previews`.
+Tests cover device parsing, settings persistence, argument quoting, shortcut validation, process failures/cancellation, mocked multi-device mirroring, quiet startup and manual activation, and updater fixtures. When NSIS is found during configuration, installer fixtures also verify automatic launch, startup registration, reinstall/uninstall cleanup, and running-app failure paths using temporary test entries. Quit the tray app before testing; startup and installer checks skip if it is already running. When Slint's software renderer is available, `scrcpy-ui-preview` renders Devices, Settings, Templates and empty states without opening native windows or accessing a phone; PPM previews are written to `build/ui-previews`.
 
 Zed's project configuration supplies the `@material` library path for components that import it. The current popup uses custom Slint controls plus standard input/scroll widgets.

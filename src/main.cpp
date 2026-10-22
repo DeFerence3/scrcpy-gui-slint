@@ -564,7 +564,7 @@ public:
       ui->set_update_status("Unable to stage update helper.");
     }
   }
-  void initialize(bool updated) {
+  void initialize(bool updated, bool startup) {
     controller = this;
     settings_path = app::config_directory() / "settings.dat";
     std::string error;
@@ -709,11 +709,12 @@ public:
                        [this] { update(false); });
     if (scrcpy->detect(settings.scrcpy_path)) {
       path_changed();
-      if (!updated)
+      if (!updated && !startup)
         pending_quick = true;
     } else {
       ui->set_page(1);
-      show();
+      if (!startup)
+        show();
       status("Choose scrcpy.exe to get started. The app stays in your tray.");
     }
     if (updated) {
@@ -785,11 +786,19 @@ LRESULT CALLBACK tray_proc(HWND hwnd, UINT msg, WPARAM wp, LPARAM lp) {
 } // namespace
 
 int main(int argc, char **argv) {
+  bool startup = false, updated = false;
+  for (int i = 1; i < argc; ++i) {
+    startup |= std::string(argv[i]) == "--startup";
+    updated |= std::string(argv[i]) == "--updated";
+  }
   HANDLE single = CreateMutexW(nullptr, FALSE, L"Local\\ScrcpyPadSlint");
   if (GetLastError() == ERROR_ALREADY_EXISTS) {
-    if (HWND existing = FindWindowW(L"ScrcpyTrayMsgWnd", nullptr)) {
-      COPYDATASTRUCT data{};
-      SendMessageW(existing, WM_COPYDATA, 0, (LPARAM)&data);
+    // Sign-in and installer launches must not activate an existing session.
+    if (!startup) {
+      if (HWND existing = FindWindowW(L"ScrcpyTrayMsgWnd", nullptr)) {
+        COPYDATASTRUCT data{};
+        SendMessageW(existing, WM_COPYDATA, 0, (LPARAM)&data);
+      }
     }
     if (single)
       CloseHandle(single);
@@ -798,7 +807,7 @@ int main(int argc, char **argv) {
   int result = 0;
   try {
     auto app = std::make_shared<Controller>();
-    app->initialize(argc > 1 && std::string(argv[1]) == "--updated");
+    app->initialize(updated, startup);
     slint::run_event_loop(slint::EventLoopMode::RunUntilQuit);
   } catch (const std::exception &e) {
     MessageBoxW(nullptr, app::wide(e.what()).c_str(), L"scrcpy-gui",
