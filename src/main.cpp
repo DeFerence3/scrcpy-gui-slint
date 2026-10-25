@@ -1,5 +1,6 @@
 #include "main.h"
 #include "Scrcpy.h"
+#include "FileExplorer.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -34,6 +35,7 @@ public:
   slint::ComponentHandle<MainWindow> ui = MainWindow::create();
   app::Settings settings;
   std::unique_ptr<Scrcpy> scrcpy;
+  std::shared_ptr<FileExplorer> explorer;
   HWND tray = nullptr;
   NOTIFYICONDATAW icon{};
   bool visible = false, picking = false, focused = false, pending_quick = false;
@@ -95,6 +97,7 @@ public:
     focused = false;
     shown_at = GetTickCount64();
     if (HWND hwnd = FindWindowW(nullptr, WindowTitle)) {
+      if (explorer) explorer->attach(hwnd);
       RECT area{}, rect{};
       POINT cursor{};
       GetCursorPos(&cursor);
@@ -115,7 +118,9 @@ public:
     }
   }
   void hide() {
+    if (explorer) explorer->detach();
     ui->hide();
+    ui->set_page(0);
     visible = focused = false;
     hidden_at = GetTickCount64();
   }
@@ -125,6 +130,7 @@ public:
     device_timer.stop();
     update_timer.stop();
     scrcpy->stop();
+    if (explorer) explorer->shutdown();
     Shell_NotifyIconW(NIM_DELETE, &icon);
     if (hotkey_id)
       UnregisterHotKey(tray, hotkey_id);
@@ -268,6 +274,16 @@ public:
     if (scrcpy->start(serial, settings.templates[index].arguments))
       status("Starting " + d->name + " with " + settings.templates[index].name +
              ".");
+  }
+  void explore(const std::string &serial) {
+    if (installing) { status("Wait for the update installation to finish."); return; }
+    auto device = std::find_if(devices.begin(), devices.end(), [&](const auto &d) { return d.serial == serial; });
+    if (device == devices.end() || !device->ready()) {
+      status("That device is not ready. Refresh and accept USB debugging on the phone.");
+      return;
+    }
+    if (!explorer) explorer = FileExplorer::create(ui);
+    explorer->open(FindWindowW(nullptr, WindowTitle), scrcpy->adb_path(), serial, device->name);
   }
   void refresh(bool quick = false, bool silent = false) {
     pending_quick |= quick;
@@ -441,8 +457,8 @@ public:
     if (ui->get_updating())
       return;
     if (install &&
-        (!sessions.empty() || picking || ui->get_scanning() || pending_quick)) {
-      status("Stop mirroring and wait for device discovery before updating.");
+        (!sessions.empty() || picking || ui->get_scanning() || pending_quick || (explorer && explorer->busy()))) {
+      status("Stop mirroring and wait for device discovery and file transfers before updating.");
       return;
     }
     if (install && available_version.empty())
@@ -455,6 +471,7 @@ public:
     }
     ui->set_updating(true);
     installing = install;
+    if (explorer) explorer->set_installing(install);
     auto_install_attempted = install;
     ui->set_update_status(install ? "Downloading and verifying the GUI update…"
                                   : "Checking GitHub releases…");
@@ -489,6 +506,7 @@ public:
       post(weak, [result, install](Controller &c) {
         c.ui->set_updating(false);
         c.installing = false;
+        if (c.explorer) c.explorer->set_installing(false);
         std::istringstream lines(result.text);
         std::string line, marker, value;
         while (std::getline(lines, line)) {
@@ -604,6 +622,8 @@ public:
     ui->on_refresh_devices([this] { refresh(); });
     ui->on_mirror_device(
         [this](slint::SharedString serial) { mirror(text(serial)); });
+    ui->on_explore_device(
+        [this](slint::SharedString serial) { explore(text(serial)); });
     ui->on_stop_device(
         [this](slint::SharedString serial) { scrcpy->stop(text(serial)); });
     ui->on_stop_all([this] { scrcpy->stop(); });
@@ -623,6 +643,7 @@ public:
         status("Invalid executable path. Select an existing scrcpy.exe.");
     });
     ui->on_restart_adb([this, weak] {
+      if (explorer && explorer->busy()) { status("Wait for the file operation to finish before restarting ADB."); return; }
       if (ui->get_scanning())
         return;
       ui->set_scanning(true);
@@ -664,13 +685,16 @@ public:
     ui->on_hide_to_tray([this] { hide(); });
     ui->on_quit_app([this] { quit(); });
     ui->window().on_close_requested([this] {
+      if (explorer) explorer->detach();
+      ui->set_page(0);
       visible = focused = false;
       hidden_at = GetTickCount64();
       return slint::CloseRequestResponse::HideWindow;
     });
     focus_timer.start(
         slint::TimerMode::Repeated, std::chrono::milliseconds(100), [this] {
-          if (!visible || picking || ui->get_pinned())
+          // Keep Files visible while selecting or dragging files from Explorer.
+          if (!visible || picking || ui->get_pinned() || ui->get_page() == 3 || (explorer && explorer->busy()))
             return;
           HWND hwnd = FindWindowW(nullptr, WindowTitle),
                fg = GetForegroundWindow();
@@ -792,6 +816,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   int result = 0;
+  HRESULT ole = OleInitialize(nullptr);
   try {
     auto app = std::make_shared<Controller>();
     app->initialize(updated, startup);
@@ -803,6 +828,7 @@ int main(int argc, char **argv) {
   }
   if (single)
     CloseHandle(single);
+  if (SUCCEEDED(ole)) OleUninitialize();
   return result;
 }
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {

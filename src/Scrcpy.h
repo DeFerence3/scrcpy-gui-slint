@@ -19,6 +19,7 @@ class Scrcpy {
       void restart_adb(std::function<void()> done) const;
       bool start(const std::string &serial, const std::string &arguments);
       void stop(const std::string &serial = {});
+      std::wstring adb_path() const;
 
     private:
       struct State {
@@ -26,7 +27,6 @@ class Scrcpy {
         std::map<std::string, std::shared_ptr<app::Cancel>> sessions;
       };
       std::shared_ptr<State> state_ = std::make_shared<State>();
-      std::wstring adb_path() const;
       std::wstring path_;
       Output output_;
       Session session_;

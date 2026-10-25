@@ -1,4 +1,4 @@
-import { ComboBox, LineEdit, TextEdit, CheckBox, ScrollView, Palette } from "std-widgets.slint";
+import { ComboBox, LineEdit, TextEdit, CheckBox, ScrollView, Palette, ProgressIndicator } from "std-widgets.slint";
 
 export struct DeviceRow {
     serial: string,
@@ -17,14 +17,24 @@ global Theme {
     out property <color> accent: #8cafff;
 }
 
+component FolderIcon inherits Rectangle {
+    width: 18px;
+    height: 18px;
+    in property <color> tint: Theme.accent;
+    Rectangle { x: 1px; y: 3px; width: 7px; height: 5px; border-radius: 1px; background: root.tint; }
+    Rectangle { x: 1px; y: 6px; width: 16px; height: 10px; border-radius: 2px; border-width: 1.5px; border-color: root.tint; background: Theme.panel; }
+}
+
 component Action inherits Rectangle {
     in property <string> text;
+    in property <string> description: text;
+    in property <bool> folder-icon: false;
     in property <bool> primary: false;
     in property <bool> quiet: false;
     in property <bool> enabled: true;
     callback clicked;
     min-height: 36px;
-    min-width: label.preferred-width + 24px;
+    min-width: root.folder-icon ? 36px : label.preferred-width + 24px;
     horizontal-stretch: 1;
     border-radius: 7px;
     background: !root.enabled ? #252635 : root.primary ? (touch.has-hover ? #a6c0ff : Theme.accent) : touch.has-hover ? #404258 : root.quiet ? transparent : #333546;
@@ -32,18 +42,20 @@ component Action inherits Rectangle {
     border-color: focus.has-focus ? Theme.accent : root.primary ? Theme.accent : Theme.border;
     opacity: root.enabled ? 1 : 0.45;
     accessible-role: button;
-    accessible-label: text;
+    accessible-label: description;
     accessible-enabled: enabled;
     accessible-action-default => { if root.enabled { root.clicked(); } }
     forward-focus: focus;
     label := Text {
         text: root.text;
-        color: root.primary ? #17213b : Theme.text;
+        visible: !root.folder-icon;
+        color: !root.enabled ? Theme.muted : root.primary ? #17213b : Theme.text;
         font-size: 13px;
         font-weight: root.primary ? 600 : 400;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
+    if root.folder-icon: FolderIcon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
     focus := FocusScope {
         enabled: root.enabled;
         key-pressed(event) => {
@@ -65,6 +77,163 @@ component Label inherits Text {
     color: Theme.muted;
     font-size: 12px;
     vertical-alignment: center;
+}
+
+component IconAction inherits Action {
+    in property <image> icon;
+    width: 36px;
+    height: 36px;
+    horizontal-stretch: 0;
+    Image {
+        x: 10px; y: 10px;
+        width: 16px; height: 16px;
+        source: root.icon;
+        colorize: root.enabled && root.primary ? #17213b : Theme.text;
+    }
+    Tooltip { text: @markdown("\{root.description}"); }
+}
+
+export struct FileRow {
+    name: string,
+    directory: bool,
+    detail: string,
+}
+
+component FilePanel inherits Rectangle {
+    in property <string> device-name;
+    in property <string> device-serial;
+    in-out property <string> path: "/sdcard";
+    in property <bool> busy: false;
+    in property <bool> uploading: false;
+    in property <bool> ready: false;
+    in property <bool> dragging: false;
+    in property <bool> failed: false;
+    in property <string> status: "Opening device storage…";
+    in property <[FileRow]> files;
+    callback navigate(string);
+    callback up();
+    callback refresh();
+    callback open-folder(int);
+    callback download(int);
+    callback upload();
+    callback cancel();
+    callback back();
+    VerticalLayout {
+        spacing: 10px;
+        HorizontalLayout {
+            height: 40px;
+            spacing: 8px;
+            IconAction { icon: @image-url("icons/back.svg"); description: "Back to devices"; enabled: !root.busy; clicked => { root.back(); } }
+            VerticalLayout {
+                horizontal-stretch: 1;
+                spacing: 3px;
+                Text { text: root.device-name + " · Files"; color: Theme.text; font-size: 14px; font-weight: 600; overflow: elide; }
+                Label { text: root.device-serial; font-size: 10px; overflow: elide; }
+            }
+            IconAction { icon: @image-url("icons/upload.svg"); description: "Upload files"; primary: true; enabled: root.ready && !root.busy; clicked => { root.upload(); } }
+        }
+        HorizontalLayout {
+            height: 36px;
+            spacing: 6px;
+            IconAction { icon: @image-url("icons/up.svg"); description: "Up one folder"; enabled: !root.busy && root.path != "/"; clicked => { root.up(); } }
+            IconAction { icon: @image-url("icons/home.svg"); description: "Device storage"; enabled: !root.busy; clicked => { root.navigate("/sdcard"); } }
+            LineEdit { text <=> root.path; enabled: !root.busy; horizontal-stretch: 1; min-width: 0px; accepted => { root.navigate(root.path); } }
+            IconAction { icon: @image-url("icons/open.svg"); description: "Open path"; enabled: !root.busy; clicked => { root.navigate(root.path); } }
+            IconAction { icon: @image-url("icons/refresh.svg"); description: "Refresh folder"; enabled: !root.busy; clicked => { root.refresh(); } }
+        }
+        Rectangle {
+            vertical-stretch: 1;
+            border-radius: 8px;
+            border-width: root.dragging ? 2px : 1px;
+            border-color: root.dragging ? Theme.accent : Theme.border;
+            background: root.dragging ? #303d59 : Theme.panel;
+            VerticalLayout {
+                padding: 8px;
+                spacing: 8px;
+                HorizontalLayout {
+                    height: 22px;
+                    Label { text: "Name"; horizontal-stretch: 1; }
+                    Label { text: "Size"; width: 62px; }
+                    Rectangle { width: 40px; }
+                }
+                Rectangle { height: 1px; background: Theme.border; }
+                ScrollView {
+                    content-width: self.visible-width;
+                    vertical-stretch: 1;
+                    VerticalLayout {
+                        alignment: start;
+                        spacing: 4px;
+                        for file[index] in root.files: Rectangle {
+                            height: 42px;
+                            border-radius: 5px;
+                            background: #242533;
+                            HorizontalLayout {
+                                padding-left: 8px;
+                                padding-right: 4px;
+                                spacing: 8px;
+                                Rectangle {
+                                    width: 20px;
+                                    if file.directory: FolderIcon { y: (parent.height - self.height) / 2; }
+                                    if !file.directory: Rectangle { x: 3px; y: (parent.height - self.height) / 2; width: 11px; height: 15px; border-width: 1px; border-color: Theme.muted; border-radius: 1px; }
+                                }
+                                Rectangle {
+                                    horizontal-stretch: 1;
+                                    min-width: 0px;
+                                    clip: true;
+                                    Text { width: parent.width; height: parent.height; text: file.name; color: Theme.text; overflow: elide; horizontal-alignment: left; vertical-alignment: center; }
+                                    TouchArea { enabled: file.directory && !root.busy; mouse-cursor: pointer; clicked => { root.open-folder(index); } }
+                                }
+                                Label { text: file.detail; width: 62px; font-size: 10px; overflow: elide; }
+                                Rectangle {
+                                    width: 36px;
+                                    horizontal-stretch: 0;
+                                    IconAction {
+                                        x: (parent.width - self.width) / 2;
+                                        y: (parent.height - self.height) / 2;
+                                        icon: file.directory ? @image-url("icons/open.svg") : @image-url("icons/download.svg");
+                                        description: (file.directory ? "Open " : "Download ") + file.name;
+                                        enabled: !root.busy && root.ready;
+                                        clicked => { if file.directory { root.open-folder(index); } else { root.download(index); } }
+                                    }
+                                }
+                            }
+                        }
+                        if root.files.length == 0: Label {
+                            height: 130px;
+                            text: root.busy ? (root.ready ? "Transfer in progress…" : "Loading folder…") : !root.ready && root.failed ? "Unable to open this folder.\nCheck the message below, then refresh or open another path." : "This folder is empty.\nDrop files here to upload them.";
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                    }
+                }
+            }
+        }
+        Label { text: root.dragging ? "Release to upload into this folder" : "Drop files here to upload to the open folder."; font-size: 11px; wrap: word-wrap; color: root.dragging ? Theme.accent : Theme.muted; }
+        if !root.uploading: HorizontalLayout {
+            spacing: 10px;
+            Label { text: root.status; font-size: 11px; color: root.failed ? #f4a8a8 : Theme.muted; horizontal-stretch: 1; wrap: word-wrap; min-height: 32px; max-height: 64px; overflow: elide; }
+            if root.busy: IconAction { icon: @image-url("icons/cancel.svg"); description: "Cancel transfer"; clicked => { root.cancel(); } }
+        }
+        if root.uploading: Rectangle {
+            height: 64px;
+            border-radius: 8px;
+            border-width: 1px;
+            border-color: Theme.accent;
+            background: #2b3853;
+            HorizontalLayout {
+                padding: 8px;
+                spacing: 8px;
+                VerticalLayout {
+                    horizontal-stretch: 1;
+                    spacing: 4px;
+                    Text { text: root.status; color: Theme.text; font-size: 11px; font-weight: 600; overflow: elide; vertical-alignment: center; }
+                    Label { text: "Browsing is paused during upload."; color: #c3d4fc; font-size: 10px; }
+                    ProgressIndicator { indeterminate: true; height: 5px; accessible-label: "Upload in progress"; }
+                }
+                IconAction { icon: @image-url("icons/cancel.svg"); primary: true; description: "Cancel upload"; clicked => { root.cancel(); } }
+            }
+        }
+    }
 }
 
 export component MainWindow inherits Window {
@@ -100,9 +269,28 @@ export component MainWindow inherits Window {
     in property <string> update-status: "Updates not checked";
     in property <string> scrcpy-version: "scrcpy not configured";
     in property <string> app-version: "0.1.0";
+    in property <string> file-device-name;
+    in property <string> file-device-serial;
+    in-out property <string> file-path: "/sdcard";
+    in property <bool> file-busy: false;
+    in property <bool> file-uploading: false;
+    in property <bool> file-ready: false;
+    in property <bool> file-dragging: false;
+    in property <bool> file-failed: false;
+    in property <string> file-status: "Opening device storage…";
+    in property <[FileRow]> file-entries;
+
+    callback file-navigate(string);
+    callback file-up();
+    callback file-refresh();
+    callback file-open-folder(int);
+    callback file-download(int);
+    callback file-upload();
+    callback file-cancel();
 
     callback refresh-devices();
     callback mirror-device(string);
+    callback explore-device(string);
     callback stop-device(string);
     callback quick-mirror();
     callback stop-all();
@@ -150,7 +338,7 @@ export component MainWindow inherits Window {
                 Action { text: root.pinned ? "Unpin" : "Pin"; quiet: true; horizontal-stretch: 0; clicked => { root.pinned = !root.pinned; } }
                 Action { text: "×"; quiet: true; horizontal-stretch: 0; clicked => { root.hide-to-tray(); } }
             }
-            Rectangle {
+            if root.page != 3: Rectangle {
                 height: 38px;
                 border-radius: 8px;
                 background: Theme.panel;
@@ -162,6 +350,26 @@ export component MainWindow inherits Window {
             }
             Rectangle {
                 vertical-stretch: 1;
+                if root.page == 3: FilePanel {
+                    device-name: root.file-device-name;
+                    device-serial: root.file-device-serial;
+                    path <=> root.file-path;
+                    busy: root.file-busy;
+                    uploading: root.file-uploading;
+                    ready: root.file-ready;
+                    dragging: root.file-dragging;
+                    failed: root.file-failed;
+                    status: root.file-status;
+                    files: root.file-entries;
+                    back => { root.page = 0; root.refresh-devices(); }
+                    navigate(path) => { root.file-navigate(path); }
+                    up => { root.file-up(); }
+                    refresh => { root.file-refresh(); }
+                    open-folder(index) => { root.file-open-folder(index); }
+                    download(index) => { root.file-download(index); }
+                    upload => { root.file-upload(); }
+                    cancel => { root.file-cancel(); }
+                }
                 if root.page == 0: VerticalLayout {
                     spacing: 10px;
                     HorizontalLayout {
@@ -205,8 +413,17 @@ export component MainWindow inherits Window {
                                         Label { text: device.detail; font-size: 10px; overflow: elide; }
                                     }
                                     Action {
-                                        text: device.running ? "■ Stop" : "▷ Mirror";
-                                        width: 94px;
+                                        folder-icon: true;
+                                        description: "Explore files on " + device.name;
+                                        width: 36px;
+                                        horizontal-stretch: 0;
+                                        enabled: device.ready;
+                                        clicked => { root.explore-device(device.serial); }
+                                    }
+                                    Action {
+                                        text: device.running ? "■" : "▷";
+                                        description: device.running ? "Stop mirroring " + device.name : "Mirror " + device.name;
+                                        width: 36px;
                                         horizontal-stretch: 0;
                                         enabled: device.ready || device.running;
                                         clicked => { if device.running { root.stop-device(device.serial); } else { root.mirror-device(device.serial); } }
@@ -283,14 +500,14 @@ export component MainWindow inherits Window {
                     Rectangle { vertical-stretch: 1; }
                 }
             }
-            Label { text: root.status-text; wrap: word-wrap; min-height: 30px; font-size: 11px; }
-            HorizontalLayout {
+            if root.page != 3: Label { text: root.status-text; wrap: word-wrap; min-height: 30px; font-size: 11px; }
+            if root.page != 3: HorizontalLayout {
                 height: 24px;
                 Label { text: "Logs"; horizontal-stretch: 1; }
                 Action { text: "Stop all"; quiet: true; enabled: root.active-sessions > 0; horizontal-stretch: 0; clicked => { root.stop-all(); } }
                 Action { text: "Clear"; quiet: true; horizontal-stretch: 0; clicked => { root.console-text = ""; } }
             }
-            Rectangle {
+            if root.page != 3: Rectangle {
                 height: 110px;
                 border-radius: 8px;
                 background: #11111c;

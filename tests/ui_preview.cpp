@@ -16,7 +16,8 @@ public:
 };
 class PreviewPlatform : public slint::platform::Platform {
 public:
-  std::unique_ptr<slint::platform::WindowAdapter> create_window_adapter() override { return std::make_unique<PreviewWindow>(); }
+  static inline int windows_created = 0;
+  std::unique_ptr<slint::platform::WindowAdapter> create_window_adapter() override { ++windows_created; return std::make_unique<PreviewWindow>(); }
 };
 int main(int argc, char **argv) {
   try {
@@ -73,8 +74,85 @@ int main(int argc, char **argv) {
     ui->window().take_snapshot();
     std::string mirrored;
     ui->on_mirror_device([&](slint::SharedString serial) { mirrored = serial.data(); });
-    click(345, 186);
+    click(373, 186);
     if (mirrored != "USB123") throw std::runtime_error("Mirror button did not select its device");
-    std::cout << "Rendered all views; tab switching, pinning and per-device Mirror hit targets passed.\n";
+    std::string explored;
+    ui->on_explore_device([&](slint::SharedString serial) { explored = serial.data(); });
+    click(327, 186);
+    if (explored != "USB123") throw std::runtime_error("Files button did not select its device");
+    pixel.running = true;
+    ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, locked}));
+    ui->window().take_snapshot();
+    std::string stopped;
+    ui->on_stop_device([&](slint::SharedString serial) { stopped = serial.data(); });
+    click(373, 186);
+    if (stopped != "USB123") throw std::runtime_error("Icon Stop button did not select its device");
+    explored.clear(); mirrored.clear();
+    click(327, 259); click(373, 259);
+    if (!explored.empty() || !mirrored.empty()) throw std::runtime_error("Unavailable device actions were enabled");
+
+    auto files = ui;
+    files->set_file_device_name("Pixel 7 Pro"); files->set_file_device_serial("USB123");
+    files->set_file_path("/sdcard/Download"); files->set_file_ready(true);
+    files->set_file_status("3 items · /sdcard/Download");
+    FileRow folder{}; folder.name = "Photos"; folder.directory = true; folder.detail = "Folder";
+    FileRow document{}; document.name = "Trip itinerary — October.pdf"; document.detail = "142.5 KB";
+    FileRow archive{}; archive.name = "A very long filename with spaces and Unicode 雪 — backup.zip"; archive.detail = "1.2 GB";
+    files->set_file_entries(std::make_shared<slint::VectorModel<FileRow>>(std::vector<FileRow>{folder, document, archive}));
+    ui->on_explore_device([&](slint::SharedString serial) { explored = serial.data(); ui->set_page(3); });
+    click(327, 186);
+    if (explored != "USB123" || ui->get_page() != 3 || PreviewPlatform::windows_created != 1)
+      throw std::runtime_error("File explorer did not open inside the existing tray window");
+    auto capture_files = [&](const char *name) {
+      auto shot = files->window().take_snapshot();
+      if (!shot) throw std::runtime_error("Could not render file explorer");
+      std::ofstream image(output / (std::string(name) + ".ppm"), std::ios::binary);
+      image << "P6\n" << shot->width() << ' ' << shot->height() << "\n255\n";
+      for (const auto &p : *shot) { image.put(p.r); image.put(p.g); image.put(p.b); }
+    };
+    capture_files("files");
+    auto file_click = [&](float x, float y) {
+      slint::platform::update_timers_and_animations();
+      files->window().dispatch_pointer_move_event(slint::LogicalPosition({x, y}));
+      files->window().dispatch_pointer_press_event(slint::LogicalPosition({x, y}), slint::PointerEventButton::Left);
+      files->window().dispatch_pointer_release_event(slint::LogicalPosition({x, y}), slint::PointerEventButton::Left);
+    };
+    int opened = -1, downloaded = -1; bool upload = false, up = false, refreshed = false, cancelled = false;
+    std::string destination;
+    files->on_file_open_folder([&](int index) { opened = index; });
+    files->on_file_download([&](int index) { downloaded = index; });
+    files->on_file_upload([&] { upload = true; });
+    files->on_file_up([&] { up = true; });
+    files->on_file_refresh([&] { refreshed = true; });
+    files->on_file_cancel([&] { cancelled = true; });
+    files->on_file_navigate([&](slint::SharedString path) { destination = path.data(); });
+    file_click(371, 226); file_click(371, 272); file_click(384, 82);
+    if (opened != 0 || downloaded != 1 || !upload) throw std::runtime_error("File explorer actions did not select the expected row");
+    file_click(36, 130); file_click(78, 130); file_click(384, 130);
+    if (!up || !refreshed || destination != "/sdcard") throw std::runtime_error("Folder navigation icons did not respond");
+    file_click(342, 130);
+    if (destination != "/sdcard/Download") throw std::runtime_error("Open path icon used the wrong folder");
+    file_click(36, 80);
+    if (ui->get_page() != 0) throw std::runtime_error("Back icon did not return to devices");
+    ui->window().take_snapshot(); click(327, 186);
+    if (ui->get_page() != 3 || PreviewPlatform::windows_created != 1) throw std::runtime_error("Reopening Files created another window");
+    ui->window().take_snapshot();
+    files->set_file_dragging(true); capture_files("files-drop"); files->set_file_dragging(false);
+    files->set_file_busy(true); files->set_file_uploading(true);
+    files->set_file_status("Uploading 1/2: holiday photo.jpg"); capture_files("files-transfer");
+    downloaded = -1; upload = false; file_click(371, 272); file_click(384, 82); file_click(36, 80);
+    if (downloaded != -1 || upload || ui->get_page() != 3) throw std::runtime_error("File actions were enabled during a transfer");
+    file_click(376, 608);
+    if (!cancelled) throw std::runtime_error("Cancel icon did not respond");
+    files->set_file_status("Cancelling…"); capture_files("files-upload-cancelling");
+    files->window().set_size(slint::PhysicalSize({380, 660}));
+    files->set_file_status("Uploading 2/2: A very long filename with spaces and Unicode 雪 — backup.zip");
+    capture_files("files-upload-small");
+    files->set_file_uploading(false); files->set_file_busy(false);
+    files->set_file_status("Uploaded 2 files to /sdcard/Download."); capture_files("files-small");
+    files->set_file_entries(std::make_shared<slint::VectorModel<FileRow>>());
+    files->set_file_status("0 items · /sdcard/Download"); capture_files("files-empty");
+    files->set_file_failed(true); files->set_file_ready(false); files->set_file_status("Permission denied: /data/private"); capture_files("files-error");
+    std::cout << "Rendered all views; same-window explorer, icon navigation, back, transfers and cancellation hit targets passed.\n";
   } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }
 }
