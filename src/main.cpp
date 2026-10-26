@@ -1,6 +1,7 @@
 #include "main.h"
 #include "Scrcpy.h"
 #include "FileExplorer.h"
+#include "DeviceModel.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -44,6 +45,7 @@ public:
   ULONGLONG shown_at = 0, hidden_at = 0;
   int hotkey_id = 0;
   std::vector<app::Device> devices;
+  std::shared_ptr<DeviceModel> device_model = std::make_shared<DeviceModel>();
   std::set<std::string> sessions;
   std::string available_version;
   std::filesystem::path settings_path;
@@ -165,7 +167,7 @@ public:
         rows.push_back(row);
       }
     }
-    ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(rows));
+    device_model->update(rows);
     ui->set_active_sessions((int)sessions.size());
   }
   void publish_templates() {
@@ -280,8 +282,11 @@ public:
   }
   void refresh(bool quick = false, bool silent = false) {
     pending_quick |= quick;
-    if (ui->get_scanning())
+    if (ui->get_scanning()) {
+      if (!silent)
+        ui->set_refreshing(true);
       return;
+    }
     if (quick && scrcpy->path().empty()) {
       pending_quick = false;
       ui->set_page(1);
@@ -290,13 +295,13 @@ public:
       return;
     }
     ui->set_scanning(true);
+    ui->set_refreshing(!silent);
     auto weak = weak_from_this();
     scrcpy->list_devices([weak, silent](std::vector<app::Device> list,
                                         std::string error) {
       post(weak, [list = std::move(list), error, silent](Controller &c) {
         c.ui->set_scanning(false);
-        c.devices = list;
-        c.publish_devices();
+        c.ui->set_refreshing(false);
         bool quick = c.pending_quick;
         c.pending_quick = false;
         if (!error.empty()) {
@@ -309,6 +314,8 @@ public:
             c.show();
           return;
         }
+        c.devices = list;
+        c.publish_devices();
         if (!silent || quick)
           c.log("[adb] Found " + std::to_string(list.size()) + " device(s).\n");
         if (quick) {
@@ -570,6 +577,8 @@ public:
     if (!error.empty())
       log(error + "\n");
     ui->set_app_version(APP_VERSION);
+    ui->set_repository_url(slint::SharedString(app::repository_url()));
+    ui->set_devices(device_model);
     ui->set_auto_update(settings.auto_update);
     publish_templates();
     edit_template(0);
@@ -649,6 +658,13 @@ public:
     ui->on_save_update_settings([this] { save_update_settings(); });
     ui->on_check_updates([this] { update(false); });
     ui->on_install_update([this] { update(true); });
+    ui->on_open_repository([this] {
+      const auto url = app::wide(text(ui->get_repository_url()));
+      const auto result = ShellExecuteW(nullptr, L"open", url.c_str(), nullptr,
+                                        nullptr, SW_SHOWNORMAL);
+      if (reinterpret_cast<INT_PTR>(result) <= 32)
+        status("Could not open the GitHub repository in your browser.");
+    });
     ui->on_make_default([this] {
       int index = ui->get_editing_template();
       if (index < 0 || index >= (int)settings.templates.size())

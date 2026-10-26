@@ -186,6 +186,14 @@ component Label inherits Text {
     vertical-alignment: center;
 }
 
+component Heading inherits Text {
+    color: Theme.accent;
+    font-size: 15px;
+    font-weight: 600;
+    vertical-alignment: center;
+    overflow: elide;
+}
+
 component IconAction inherits Action {
     in property <image> icon;
     width: 36px;
@@ -196,6 +204,58 @@ component IconAction inherits Action {
         width: 16px; height: 16px;
         source: root.icon;
         colorize: root.enabled && root.primary ? #17213b : Theme.text;
+    }
+    Tooltip { text: @markdown("\{root.description}"); }
+}
+
+component TopBar inherits Rectangle {
+    in property <string> title;
+    in property <string> back-description;
+    callback back();
+    height: 40px;
+    IconAction {
+        x: 0px;
+        y: (parent.height - self.height) / 2;
+        icon: @image-url("icons/back.svg");
+        description: root.back-description;
+        quiet: true;
+        clicked => { root.back(); }
+    }
+    Heading {
+        x: 44px;
+        width: max(0px, parent.width - self.x);
+        height: parent.height;
+        text: root.title;
+        font-size: 17px;
+    }
+}
+
+component FooterLink inherits Text {
+    in property <string> description: root.text;
+    in property <bool> enabled: true;
+    callback clicked();
+    font-size: 11px;
+    color: touch.has-hover || focus.has-focus ? Theme.accent : Theme.muted;
+    vertical-alignment: center;
+    accessible-role: button;
+    accessible-label: root.description;
+    accessible-enabled: root.enabled;
+    accessible-action-default => { if root.enabled { root.clicked(); } }
+    forward-focus: focus;
+    focus := FocusScope {
+        enabled: root.enabled;
+        key-pressed(event) => {
+            if event.text == " " || event.text == "\n" || event.text == Key.Return {
+                root.clicked();
+                return accept;
+            }
+            reject
+        }
+    }
+    touch := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { focus.focus(); root.clicked(); }
     }
     Tooltip { text: @markdown("\{root.description}"); }
 }
@@ -234,7 +294,7 @@ component FilePanel inherits Rectangle {
             VerticalLayout {
                 horizontal-stretch: 1;
                 spacing: 3px;
-                Text { text: root.device-name + " · Files"; color: Theme.text; font-size: 14px; font-weight: 600; overflow: elide; }
+                Heading { text: root.device-name + " · Files"; font-size: 16px; }
                 Label { text: root.device-serial; font-size: 10px; overflow: elide; }
             }
             IconAction { icon: @image-url("icons/upload.svg"); description: "Upload files"; primary: true; enabled: root.ready && !root.busy; clicked => { root.upload(); } }
@@ -361,6 +421,7 @@ export component MainWindow inherits Window {
     in-out property <string> shortcut-edit: "Ctrl + Alt + S";
     in-out property <bool> auto-update: false;
     in property <bool> scanning: false;
+    in property <bool> refreshing: false;
     in property <bool> updating: false;
     in property <bool> update-available: false;
     in property <int> active-sessions: 0;
@@ -375,6 +436,7 @@ export component MainWindow inherits Window {
     in property <string> update-status: "Updates not checked";
     in property <string> scrcpy-version: "scrcpy not configured";
     in property <string> app-version: "0.1.0";
+    in property <string> repository-url;
     in property <string> file-device-name;
     in property <string> file-device-serial;
     in-out property <string> file-path: "/sdcard";
@@ -407,6 +469,7 @@ export component MainWindow inherits Window {
     callback save-update-settings();
     callback check-updates();
     callback install-update();
+    callback open-repository();
     callback make-default();
     callback edit-template(int);
     callback new-template();
@@ -443,11 +506,10 @@ export component MainWindow inherits Window {
                 IconAction { icon: @image-url("icons/pin.svg"); description: root.pinned ? "Unpin window" : "Pin window"; primary: root.pinned; quiet: true; clicked => { root.pinned = !root.pinned; } }
                 Action { text: "×"; quiet: true; horizontal-stretch: 0; clicked => { root.hide-to-tray(); } }
             }
-            if root.page == 1: HorizontalLayout {
-                height: 38px;
-                spacing: 8px;
-                IconAction { icon: @image-url("icons/back.svg"); description: "Back to devices"; quiet: true; clicked => { root.page = 0; } }
-                Text { text: "Settings"; color: Theme.text; font-size: 14px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
+            if root.page == 1 || root.page == 2: TopBar {
+                title: root.page == 1 ? "Settings" : "Template Management";
+                back-description: root.page == 1 ? "Back to devices" : "Back to settings";
+                back => { root.page = root.page == 1 ? 0 : 1; }
             }
             Rectangle {
                 vertical-stretch: 1;
@@ -474,9 +536,9 @@ export component MainWindow inherits Window {
                 if root.page == 0: VerticalLayout {
                     spacing: 10px;
                     HorizontalLayout {
-                        height: 32px;
-                        Label { text: root.scanning ? "Finding devices…" : "Connected devices (" + root.devices.length + ")"; horizontal-stretch: 1; }
-                        Action { text: "↻ Refresh"; quiet: true; enabled: !root.scanning; horizontal-stretch: 0; clicked => { root.refresh-devices(); } }
+                        height: 36px;
+                        Heading { text: "Your devices (" + root.devices.length + ")"; font-size: 16px; horizontal-stretch: 1; }
+                        IconAction { icon: @image-url("icons/refresh.svg"); description: root.refreshing ? "Refreshing devices…" : "Refresh devices"; quiet: true; enabled: !root.refreshing; clicked => { root.refresh-devices(); } }
                     }
                     ScrollView {
                         vertical-stretch: 1;
@@ -513,27 +575,38 @@ export component MainWindow inherits Window {
                                         Text { text: device.name; color: Theme.text; font-size: 14px; font-weight: 600; overflow: elide; }
                                         Label { text: device.detail; font-size: 10px; overflow: elide; }
                                     }
-                                    Action {
-                                        folder-icon: true;
-                                        description: "Explore files on " + device.name;
+                                    Rectangle {
                                         width: 36px;
                                         horizontal-stretch: 0;
-                                        enabled: device.ready;
-                                        clicked => { root.explore-device(device.serial); }
+                                        Action {
+                                            y: (parent.height - self.height) / 2;
+                                            width: 36px;
+                                            height: 36px;
+                                            folder-icon: true;
+                                            description: "Explore files on " + device.name;
+                                            enabled: device.ready;
+                                            clicked => { root.explore-device(device.serial); }
+                                        }
                                     }
-                                    if device.running: Action {
-                                        text: "■";
-                                        description: "Stop mirroring " + device.name;
-                                        width: 36px;
+                                    Rectangle {
+                                        width: device.running ? 36px : 144px;
                                         horizontal-stretch: 0;
-                                        clicked => { root.stop-device(device.serial); }
-                                    }
-                                    if !device.running: TemplateStart {
-                                        templates: root.template-names;
-                                        default-template: root.default-template;
-                                        device-name: device.name;
-                                        enabled: device.ready && !root.updating;
-                                        start(index) => { root.mirror-device(device.serial, index); }
+                                        if device.running: Action {
+                                            y: (parent.height - self.height) / 2;
+                                            width: 36px;
+                                            height: 36px;
+                                            text: "■";
+                                            description: "Stop mirroring " + device.name;
+                                            clicked => { root.stop-device(device.serial); }
+                                        }
+                                        if !device.running: TemplateStart {
+                                            y: (parent.height - self.height) / 2;
+                                            templates: root.template-names;
+                                            default-template: root.default-template;
+                                            device-name: device.name;
+                                            enabled: device.ready && !root.updating;
+                                            start(index) => { root.mirror-device(device.serial, index); }
+                                        }
                                     }
                                 }
                             }
@@ -547,7 +620,7 @@ export component MainWindow inherits Window {
                         spacing: 9px;
                         padding-right: 4px;
                         alignment: start;
-                        Label { text: "Scrcpy executable"; }
+                        Heading { text: "scrcpy location"; }
                         LineEdit { text <=> root.scrcpy-path; placeholder-text: "C:\\Tools\\scrcpy\\scrcpy.exe"; accepted => { root.save-path(); } }
                         HorizontalLayout {
                             spacing: 6px;
@@ -555,7 +628,7 @@ export component MainWindow inherits Window {
                             Action { text: "Detect PATH"; clicked => { root.detect-scrcpy(); } }
                             Action { text: "Save path"; clicked => { root.save-path(); } }
                         }
-                        Label { text: "Quick Mirror shortcut"; }
+                        Heading { text: "Keyboard shortcut"; }
                         HorizontalLayout {
                             spacing: 6px;
                             LineEdit { text <=> root.shortcut-edit; placeholder-text: "Ctrl + Alt + S"; accepted => { root.save-shortcut(); } }
@@ -563,8 +636,8 @@ export component MainWindow inherits Window {
                         }
                         Action { text: "Manage templates  →"; clicked => { root.edit-template(root.default-template); root.page = 2; } }
                         Rectangle { height: 1px; background: Theme.border; }
-                        Label { text: "GUI updates"; }
-                        CheckBox { text: "Auto-update this GUI from GitHub"; checked <=> root.auto-update; toggled => { root.save-update-settings(); } }
+                        Heading { text: "App updates"; }
+                        CheckBox { text: "Auto-update"; checked <=> root.auto-update; toggled => { root.save-update-settings(); } }
                         HorizontalLayout {
                             spacing: 6px;
                             Action { text: root.updating ? "Working…" : "Check updates"; enabled: !root.updating; clicked => { root.check-updates(); } }
@@ -582,14 +655,10 @@ export component MainWindow inherits Window {
                 if root.page == 2: VerticalLayout {
                     spacing: 9px;
                     alignment: start;
-                    HorizontalLayout {
-                        Label { text: "Manage templates"; horizontal-stretch: 1; }
-                        Action { text: "← Back"; quiet: true; horizontal-stretch: 0; clicked => { root.page = 1; } }
-                    }
                     ComboBox { model: root.template-names; current-index: root.editing-template; selected(value) => { root.edit-template(self.current-index); } }
-                    Label { text: "Name"; }
+                    Heading { text: "Template name"; font-size: 14px; }
                     LineEdit { text <=> root.template-name; placeholder-text: "My template"; }
-                    Label { text: "scrcpy arguments"; }
+                    Heading { text: "scrcpy options"; font-size: 14px; }
                     LineEdit { text <=> root.template-arguments; placeholder-text: "--max-size=1920 --max-fps=60"; }
                     Label { text: "Examples: --no-audio, --stay-awake, --turn-screen-off\nQuote paths with spaces. Select the device in Devices."; wrap: word-wrap; font-size: 11px; }
                     HorizontalLayout {
@@ -605,7 +674,7 @@ export component MainWindow inherits Window {
             if root.page != 3: Label { text: root.status-text; wrap: word-wrap; min-height: 30px; font-size: 11px; }
             if root.page != 3: HorizontalLayout {
                 height: 24px;
-                Label { text: "Logs"; horizontal-stretch: 1; }
+                Heading { text: "Activity log"; horizontal-stretch: 1; }
                 Action { text: "Stop all"; quiet: true; enabled: root.active-sessions > 0; horizontal-stretch: 0; clicked => { root.stop-all(); } }
                 Action { text: "Clear"; quiet: true; horizontal-stretch: 0; clicked => { root.console-text = ""; } }
             }
@@ -627,13 +696,19 @@ export component MainWindow inherits Window {
             }
             HorizontalLayout {
                 height: 20px;
+                spacing: 10px;
                 Label { text: "scrcpy-gui  v" + root.app-version; font-size: 10px; horizontal-stretch: 1; }
-                Text {
-                    text: root.update-available ? "● Update available" : "GitHub ↗";
-                    color: root.update-available ? #8ad6a0 : Theme.muted;
-                    font-size: 11px;
-                    vertical-alignment: center;
-                    TouchArea { mouse-cursor: pointer; clicked => { root.page = 1; } }
+                if root.update-available: FooterLink {
+                    text: "● Update available";
+                    description: "Open update settings";
+                    color: #8ad6a0;
+                    enabled: !root.file-busy;
+                    clicked => { root.page = 1; }
+                }
+                FooterLink {
+                    text: "GitHub ↗";
+                    description: root.repository-url;
+                    clicked => { root.open-repository(); }
                 }
             }
         }

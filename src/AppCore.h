@@ -6,6 +6,10 @@
 namespace app {
 inline constexpr char update_repository[] = "DeFerence3/scrcpy-gui-slint";
 
+inline std::string repository_url() {
+  return std::string("https://github.com/") + update_repository;
+}
+
 struct Device {
   std::string serial, name, state, connection;
   bool ready() const { return state == "device"; }

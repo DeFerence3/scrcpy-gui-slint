@@ -1,4 +1,6 @@
 #include "main.h"
+#include "../src/AppCore.h"
+#include "../src/DeviceModel.h"
 #include "slint-platform.h"
 #include <filesystem>
 #include <fstream>
@@ -19,15 +21,25 @@ public:
   static inline int windows_created = 0;
   std::unique_ptr<slint::platform::WindowAdapter> create_window_adapter() override { ++windows_created; return std::make_unique<PreviewWindow>(); }
 };
+struct DeviceModelChanges : slint::private_api::ModelChangeListener {
+  int added = 0, removed = 0, changed = 0, resets = 0;
+  void row_added(size_t, size_t count) override { added += (int)count; }
+  void row_removed(size_t, size_t count) override { removed += (int)count; }
+  void row_changed(size_t) override { ++changed; }
+  void reset() override { ++resets; }
+};
 int main(int argc, char **argv) {
   try {
     slint::platform::set_platform(std::make_unique<PreviewPlatform>());
     auto ui = MainWindow::create();
+    ui->set_repository_url(slint::SharedString(app::repository_url()));
     ui->window().set_size(slint::PhysicalSize({420, 690}));
     DeviceRow pixel{}; pixel.serial = "USB123"; pixel.name = "Pixel 7 Pro"; pixel.detail = "USB · USB123"; pixel.ready = true;
     DeviceRow galaxy{}; galaxy.serial = "192.168.1.15:5555"; galaxy.name = "Galaxy S23"; galaxy.detail = "Wireless · 192.168.1.15:5555"; galaxy.ready = true;
     DeviceRow locked{}; locked.serial = "LOCKED"; locked.name = "Android device"; locked.detail = "USB · LOCKED · unauthorized"; locked.ready = false;
-    ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, galaxy, locked}));
+    auto device_model = std::make_shared<DeviceModel>();
+    device_model->update({pixel, galaxy, locked});
+    ui->set_devices(device_model);
     ui->set_template_names(std::make_shared<slint::VectorModel<slint::SharedString>>(std::vector<slint::SharedString>{"Default (1080p, 60fps)", "Lightweight (720p, 30fps)", "Full resolution"}));
     ui->set_template_name("Default (1080p, 60fps)"); ui->set_template_arguments("--max-size=1920 --max-fps=60");
     ui->set_scrcpy_path("C:\\Tools\\scrcpy\\scrcpy.exe"); ui->set_scrcpy_version("scrcpy 3.3.4");
@@ -47,7 +59,7 @@ int main(int argc, char **argv) {
     };
     for (int page=0; page<4; ++page) {
       ui->set_page(page == 3 ? 0 : page);
-      if (page == 3) ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>());
+      if (page == 3) device_model->update({});
       auto snapshot = ui->window().take_snapshot();
       if (!snapshot) throw std::runtime_error("Could not render preview");
       auto name = page == 0 ? "devices" : page == 1 ? "settings" : page == 2 ? "templates" : "empty";
@@ -63,6 +75,39 @@ int main(int argc, char **argv) {
       ui->window().dispatch_pointer_press_event(slint::LogicalPosition({x, y}), slint::PointerEventButton::Left);
       ui->window().dispatch_pointer_release_event(slint::LogicalPosition({x, y}), slint::PointerEventButton::Left);
     };
+    int repository_opens = 0;
+    std::string opened_url;
+    ui->on_open_repository([&] { ++repository_opens; opened_url = ui->get_repository_url().data(); });
+    for (int page = 0; page < 4; ++page) {
+      ui->set_page(page);
+      ui->window().take_snapshot();
+      click(375, 662);
+      if (repository_opens != page + 1 || ui->get_page() != page || opened_url != app::repository_url())
+        throw std::runtime_error("GitHub footer did not open the update repository while preserving the current page");
+    }
+    ui->window().dispatch_key_press_event(slint::platform::key_codes::Return);
+    ui->window().dispatch_key_release_event(slint::platform::key_codes::Return);
+    if (repository_opens != 5) throw std::runtime_error("GitHub footer did not support keyboard activation");
+    ui->set_update_available(true);
+    ui->set_page(0);
+    capture("devices-update-link");
+    click(375, 662);
+    if (repository_opens != 6 || ui->get_page() != 0)
+      throw std::runtime_error("An available update changed the GitHub link's action");
+    click(290, 662);
+    if (ui->get_page() != 1 || repository_opens != 6)
+      throw std::runtime_error("Update notification did not open Settings independently of GitHub");
+    ui->set_update_available(false);
+    ui->set_page(2);
+    ui->window().set_size(slint::PhysicalSize({380, 660}));
+    capture("templates-small");
+    click(36, 82);
+    if (ui->get_page() != 1) throw std::runtime_error("Template top bar did not return to Settings");
+    capture("settings-small");
+    click(36, 82);
+    if (ui->get_page() != 0) throw std::runtime_error("Shared top bar did not return from Settings to devices");
+    ui->window().set_size(slint::PhysicalSize({420, 690}));
+    ui->window().take_snapshot();
     click(295, 35);
     if (ui->get_page() != 1) throw std::runtime_error("Settings header icon did not respond");
     ui->window().take_snapshot();
@@ -80,8 +125,27 @@ int main(int argc, char **argv) {
     if (ui->get_pinned()) throw std::runtime_error("Pin button did not unpin the window");
     click(36, 82);
     if (ui->get_page() != 0) throw std::runtime_error("Settings back icon did not return to devices");
-    ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, galaxy}));
+    device_model->update({pixel, galaxy});
     ui->window().take_snapshot();
+    int refresh_requests = 0;
+    ui->on_refresh_devices([&] { ++refresh_requests; });
+    click(384, 82);
+    if (refresh_requests != 1) throw std::runtime_error("Refresh icon did not respond");
+    ui->set_refreshing(true);
+    click(384, 82);
+    if (refresh_requests != 1) throw std::runtime_error("Manual refresh could be started twice");
+    ui->set_refreshing(false);
+    ui->window().dispatch_pointer_move_event(slint::LogicalPosition({10, 350}));
+    auto before_poll = ui->window().take_snapshot();
+    ui->set_scanning(true);
+    device_model->update({galaxy, pixel});
+    auto during_poll = ui->window().take_snapshot();
+    if (!before_poll || !during_poll || !std::equal(before_poll->begin(), before_poll->end(), during_poll->begin(),
+          [](const auto &a, const auto &b) { return a.r == b.r && a.g == b.g && a.b == b.b; }))
+      throw std::runtime_error("Background polling changed the unchanged device view");
+    click(384, 82);
+    if (refresh_requests != 2) throw std::runtime_error("Background polling disabled the Refresh icon");
+    ui->set_scanning(false);
     std::string mirrored;
     int mirrored_template = -1;
     ui->on_mirror_device([&](slint::SharedString serial, int index) { mirrored = serial.data(); mirrored_template = index; });
@@ -90,6 +154,20 @@ int main(int argc, char **argv) {
     mirrored.clear(); mirrored_template = -1;
     click(375, 136);
     if (!mirrored.empty()) throw std::runtime_error("Opening the template menu started mirroring");
+    auto model_changes = std::make_shared<DeviceModelChanges>();
+    device_model->attach_peer(model_changes);
+    for (int poll = 0; poll < 3; ++poll) device_model->update({galaxy, pixel});
+    if (model_changes->added || model_changes->removed || model_changes->changed || model_changes->resets)
+      throw std::runtime_error("Unchanged or reordered ADB results rebuilt device rows");
+    auto renamed_galaxy = galaxy;
+    renamed_galaxy.name = "Galaxy S23 Ultra";
+    device_model->update({renamed_galaxy, pixel, locked});
+    if (model_changes->changed != 1 || model_changes->added != 1 || model_changes->removed || model_changes->resets ||
+        device_model->row_data(0)->serial != pixel.serial || device_model->row_data(1)->name != renamed_galaxy.name)
+      throw std::runtime_error("Device changes were not applied to the existing rows");
+    device_model->update({galaxy, pixel});
+    if (model_changes->changed != 2 || model_changes->removed != 1 || model_changes->resets)
+      throw std::runtime_error("Disconnecting a device reset the rest of the list");
     capture("device-templates");
     click(210, 245);
     capture("device-templates-clicked");
@@ -142,7 +220,9 @@ int main(int argc, char **argv) {
     click(219, 136);
     if (explored != "USB123") throw std::runtime_error("Files button did not select its device");
     pixel.running = true;
-    ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, locked}));
+    device_model->update({pixel, locked});
+    if (!device_model->row_data(0)->running || device_model->row_count() != 2 || device_model->row_data(1)->serial != locked.serial)
+      throw std::runtime_error("Session state or disconnected devices were not updated");
     ui->window().take_snapshot();
     std::string stopped;
     ui->on_stop_device([&](slint::SharedString serial) { stopped = serial.data(); });
@@ -216,6 +296,13 @@ int main(int argc, char **argv) {
     files->set_file_entries(std::make_shared<slint::VectorModel<FileRow>>());
     files->set_file_status("0 items · /sdcard/Download"); capture_files("files-empty");
     files->set_file_failed(true); files->set_file_ready(false); files->set_file_status("Permission denied: /data/private"); capture_files("files-error");
-    std::cout << "Rendered all views; template start/menu/default controls, same-window explorer, navigation, transfers and cancellation hit targets passed.\n";
+    ui->window().set_size(slint::PhysicalSize({420, 690}));
+    ui->set_page(0);
+    ui->window().take_snapshot();
+    ui->window().dispatch_pointer_move_event(slint::LogicalPosition({375, 662}));
+    std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+    slint::platform::update_timers_and_animations();
+    capture("github-tooltip");
+    std::cout << "Rendered all views; GitHub link, shared top bar, template controls, same-window explorer, navigation, transfers and cancellation hit targets passed.\n";
   } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }
 }
