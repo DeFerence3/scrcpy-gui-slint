@@ -55,8 +55,8 @@ int main(int argc, char **argv) {
       ui->window().dispatch_pointer_press_event(slint::LogicalPosition({x, y}), slint::PointerEventButton::Left);
       ui->window().dispatch_pointer_release_event(slint::LogicalPosition({x, y}), slint::PointerEventButton::Left);
     };
-    click(300, 82);
-    if (ui->get_page() != 1) throw std::runtime_error("Settings tab did not respond");
+    click(295, 35);
+    if (ui->get_page() != 1) throw std::runtime_error("Settings header icon did not respond");
     ui->window().take_snapshot();
     ui->window().dispatch_pointer_scroll_event(slint::LogicalPosition({200, 310}), 0, -1000);
     std::this_thread::sleep_for(std::chrono::milliseconds(300));
@@ -68,27 +68,29 @@ int main(int argc, char **argv) {
     for (const auto &p : *settings) { settings_image.put(p.r); settings_image.put(p.g); settings_image.put(p.b); }
     click(335, 35);
     if (!ui->get_pinned()) throw std::runtime_error("Pin button did not respond");
-    click(110, 82);
-    if (ui->get_page() != 0) throw std::runtime_error("Devices tab did not respond");
+    click(335, 35);
+    if (ui->get_pinned()) throw std::runtime_error("Pin button did not unpin the window");
+    click(36, 82);
+    if (ui->get_page() != 0) throw std::runtime_error("Settings back icon did not return to devices");
     ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, galaxy}));
     ui->window().take_snapshot();
     std::string mirrored;
     ui->on_mirror_device([&](slint::SharedString serial) { mirrored = serial.data(); });
-    click(373, 186);
+    click(373, 136);
     if (mirrored != "USB123") throw std::runtime_error("Mirror button did not select its device");
     std::string explored;
     ui->on_explore_device([&](slint::SharedString serial) { explored = serial.data(); });
-    click(327, 186);
+    click(327, 136);
     if (explored != "USB123") throw std::runtime_error("Files button did not select its device");
     pixel.running = true;
     ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, locked}));
     ui->window().take_snapshot();
     std::string stopped;
     ui->on_stop_device([&](slint::SharedString serial) { stopped = serial.data(); });
-    click(373, 186);
+    click(373, 136);
     if (stopped != "USB123") throw std::runtime_error("Icon Stop button did not select its device");
     explored.clear(); mirrored.clear();
-    click(327, 259); click(373, 259);
+    click(327, 209); click(373, 209);
     if (!explored.empty() || !mirrored.empty()) throw std::runtime_error("Unavailable device actions were enabled");
 
     auto files = ui;
@@ -100,7 +102,7 @@ int main(int argc, char **argv) {
     FileRow archive{}; archive.name = "A very long filename with spaces and Unicode 雪 — backup.zip"; archive.detail = "1.2 GB";
     files->set_file_entries(std::make_shared<slint::VectorModel<FileRow>>(std::vector<FileRow>{folder, document, archive}));
     ui->on_explore_device([&](slint::SharedString serial) { explored = serial.data(); ui->set_page(3); });
-    click(327, 186);
+    click(327, 136);
     if (explored != "USB123" || ui->get_page() != 3 || PreviewPlatform::windows_created != 1)
       throw std::runtime_error("File explorer did not open inside the existing tray window");
     auto capture_files = [&](const char *name) {
@@ -134,12 +136,14 @@ int main(int argc, char **argv) {
     if (destination != "/sdcard/Download") throw std::runtime_error("Open path icon used the wrong folder");
     file_click(36, 80);
     if (ui->get_page() != 0) throw std::runtime_error("Back icon did not return to devices");
-    ui->window().take_snapshot(); click(327, 186);
+    ui->window().take_snapshot(); click(327, 136);
     if (ui->get_page() != 3 || PreviewPlatform::windows_created != 1) throw std::runtime_error("Reopening Files created another window");
     ui->window().take_snapshot();
     files->set_file_dragging(true); capture_files("files-drop"); files->set_file_dragging(false);
     files->set_file_busy(true); files->set_file_uploading(true);
     files->set_file_status("Uploading 1/2: holiday photo.jpg"); capture_files("files-transfer");
+    click(295, 35);
+    if (ui->get_page() != 3) throw std::runtime_error("Settings was enabled during a transfer");
     downloaded = -1; upload = false; file_click(371, 272); file_click(384, 82); file_click(36, 80);
     if (downloaded != -1 || upload || ui->get_page() != 3) throw std::runtime_error("File actions were enabled during a transfer");
     file_click(376, 608);

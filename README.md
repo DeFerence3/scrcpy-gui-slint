@@ -9,12 +9,12 @@ Currently supports **Windows only**. Install scrcpy and ADB separately; they are
 1. Install scrcpy with its included `adb.exe`.
 2. Install the GUI setup package, or extract the portable ZIP and run `scrcpy-ui.exe`. The installer starts the app in the tray and enables startup at sign-in.
 3. Enable USB debugging on your Android device, connect it, and accept the authorization prompt.
-4. Open the tray icon. In **Settings**, browse to `scrcpy.exe` if it was not detected automatically.
+4. Open the tray icon. Click the **Settings gear** beside the pin icon and browse to `scrcpy.exe` if it was not detected automatically.
 5. In **Devices**, choose a template and click the **play icon** next to your device to mirror it. The icon changes to Stop while mirroring.
 
 Use **Make default** to choose the preset for **Start Default** and **Quick Mirror**. The default shortcut is **Ctrl + Alt + S**; with multiple ready devices, the app asks you to choose one.
 
-Closing the window hides it to the tray and resets it to **Devices** for the next opening. **Pin** keeps it open when focus changes; **Quit app** exits. Portable copies do not enable startup at sign-in.
+Closing the window hides it to the tray and resets it to **Devices** for the next opening. The **pin icon** keeps it open when focus changes and highlights while pinned; **Quit app** exits. Portable copies do not enable startup at sign-in.
 
 Click the **folder icon** to the left of Mirror to explore a device's files inside the tray panel. The header and version footer stay visible; the **back arrow** returns to devices. Browsing starts at `/sdcard`. Use the **up**, **home**, and **refresh** icons to navigate, or enter an absolute path and press Enter. The arrow beside a folder opens it; the **download icon** beside a file opens Save As. Drop local files into the panel, or use the **upload icon**, to copy them into the open folder. The Files page stays visible when focus changes so you can drag from Windows Explorer. Hover over an icon for its label. Existing files prompt before replacement. Use the **cancel icon** to stop a transfer; an interrupted upload may leave a partial file on the device. Android's normal ADB storage permissions apply.
 

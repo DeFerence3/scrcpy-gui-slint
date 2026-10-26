@@ -335,18 +335,15 @@ export component MainWindow inherits Window {
                 Text { text: "scrcpy-gui"; color: Theme.text; font-size: 19px; font-weight: 700; vertical-alignment: center; }
                 Text { text: root.active-sessions > 0 ? "● mirroring" : "● ready"; color: #8ad6a0; font-size: 11px; vertical-alignment: center; }
                 Rectangle { horizontal-stretch: 1; }
-                Action { text: root.pinned ? "Unpin" : "Pin"; quiet: true; horizontal-stretch: 0; clicked => { root.pinned = !root.pinned; } }
+                IconAction { icon: @image-url("icons/settings.svg"); description: "Settings"; primary: root.page == 1 || root.page == 2; quiet: true; enabled: !root.file-busy; clicked => { root.page = 1; } }
+                IconAction { icon: @image-url("icons/pin.svg"); description: root.pinned ? "Unpin window" : "Pin window"; primary: root.pinned; quiet: true; clicked => { root.pinned = !root.pinned; } }
                 Action { text: "×"; quiet: true; horizontal-stretch: 0; clicked => { root.hide-to-tray(); } }
             }
-            if root.page != 3: Rectangle {
+            if root.page == 1: HorizontalLayout {
                 height: 38px;
-                border-radius: 8px;
-                background: Theme.panel;
-                HorizontalLayout {
-                    spacing: 2px;
-                    Action { text: "Devices"; primary: root.page == 0; quiet: root.page != 0; clicked => { root.page = 0; } }
-                    Action { text: "Settings"; primary: root.page != 0; quiet: root.page == 0; clicked => { root.page = 1; } }
-                }
+                spacing: 8px;
+                IconAction { icon: @image-url("icons/back.svg"); description: "Back to devices"; quiet: true; clicked => { root.page = 0; } }
+                Text { text: "Settings"; color: Theme.text; font-size: 14px; font-weight: 600; vertical-alignment: center; horizontal-stretch: 1; }
             }
             Rectangle {
                 vertical-stretch: 1;
