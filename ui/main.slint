@@ -27,6 +27,7 @@ component FolderIcon inherits Rectangle {
 
 component Action inherits Rectangle {
     in property <string> text;
+    in property <TextHorizontalAlignment> text-alignment: center;
     in property <string> description: text;
     in property <bool> folder-icon: false;
     in property <bool> primary: false;
@@ -47,13 +48,17 @@ component Action inherits Rectangle {
     accessible-action-default => { if root.enabled { root.clicked(); } }
     forward-focus: focus;
     label := Text {
+        x: 12px;
+        width: max(0px, parent.width - 24px);
+        height: parent.height;
         text: root.text;
         visible: !root.folder-icon;
         color: !root.enabled ? Theme.muted : root.primary ? #17213b : Theme.text;
         font-size: 13px;
         font-weight: root.primary ? 600 : 400;
-        horizontal-alignment: center;
+        horizontal-alignment: root.text-alignment;
         vertical-alignment: center;
+        overflow: elide;
     }
     if root.folder-icon: FolderIcon { x: (parent.width - self.width) / 2; y: (parent.height - self.height) / 2; }
     focus := FocusScope {
@@ -70,6 +75,108 @@ component Action inherits Rectangle {
         enabled: root.enabled;
         mouse-cursor: pointer;
         clicked => { focus.focus(); root.clicked(); }
+    }
+}
+
+component TemplateStart inherits Rectangle {
+    in property <[string]> templates;
+    in property <int> default-template;
+    in property <string> device-name;
+    in property <bool> enabled: true;
+    callback start(int);
+    property <int> menu-index: 0;
+    width: 144px;
+    height: 36px;
+    horizontal-stretch: 0;
+    border-radius: 7px;
+
+    HorizontalLayout {
+        spacing: 0px;
+        Action {
+            text: root.templates[root.default-template];
+            description: "Start " + root.device-name + " with " + self.text;
+            primary: true;
+            enabled: root.enabled && root.templates.length > 0;
+            min-width: 0px;
+            border-top-right-radius: 0px;
+            border-bottom-right-radius: 0px;
+            clicked => { root.start(root.default-template); }
+            Tooltip { text: @markdown("\{parent.description}"); }
+        }
+        Rectangle { width: 1px; background: #536b9f; }
+        Action {
+            description: "Choose a template to start " + root.device-name;
+            width: 32px;
+            horizontal-stretch: 0;
+            primary: true;
+            enabled: root.enabled && root.templates.length > 0;
+            border-top-left-radius: 0px;
+            border-bottom-left-radius: 0px;
+            clicked => { root.menu-index = root.default-template; menu.show(); }
+            Image {
+                x: 10px;
+                y: (parent.height - self.height) / 2;
+                width: 12px;
+                height: 12px;
+                source: @image-url("icons/chevron-down.svg");
+                colorize: root.enabled ? #17213b : Theme.muted;
+            }
+            Tooltip { text: @markdown("\{parent.description}"); }
+        }
+    }
+    menu := PopupWindow {
+        x: root.width - self.width;
+        y: root.height + 4px;
+        width: 300px;
+        height: min(root.templates.length * 36px + 8px, 224px);
+        close-policy: close-on-click-outside;
+        forward-focus: menu-focus;
+        menu-focus := FocusScope {
+            key-pressed(event) => {
+                if event.text == Key.DownArrow {
+                    root.menu-index = min(root.menu-index + 1, root.templates.length - 1);
+                    return accept;
+                }
+                if event.text == Key.UpArrow {
+                    root.menu-index = max(root.menu-index - 1, 0);
+                    return accept;
+                }
+                if event.text == Key.Return || event.text == " " {
+                    if root.enabled { root.start(root.menu-index); }
+                    menu.close();
+                    return accept;
+                }
+                reject
+            }
+            Rectangle {
+                background: Theme.panel;
+                border-color: Theme.border;
+                border-width: 1px;
+                border-radius: 7px;
+                VerticalLayout {
+                    padding: 4px;
+                    ScrollView {
+                        content-width: self.visible-width;
+                        content-y: -max(0px, root.menu-index * 36px - self.visible-height + 36px);
+                        VerticalLayout {
+                            alignment: LayoutAlignment.start;
+                            for template[index] in root.templates: Action {
+                                height: 36px;
+                                min-width: 0px;
+                                text: (index == root.default-template ? "✓ " : "") + template;
+                                text-alignment: left;
+                                description: "Start " + root.device-name + " with " + template;
+                                primary: index == root.menu-index;
+                                quiet: true;
+                                enabled: root.enabled;
+                                clicked => { root.start(index); menu.close(); }
+                                Tooltip { text: @markdown("\{parent.description}"); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -259,7 +366,6 @@ export component MainWindow inherits Window {
     in property <int> active-sessions: 0;
     in property <[DeviceRow]> devices;
     in property <[string]> template-names;
-    in-out property <int> selected-template: 0;
     in property <int> default-template: 0;
     in-out property <int> editing-template: 0;
     in-out property <string> template-name;
@@ -289,10 +395,9 @@ export component MainWindow inherits Window {
     callback file-cancel();
 
     callback refresh-devices();
-    callback mirror-device(string);
+    callback mirror-device(string, int);
     callback explore-device(string);
     callback stop-device(string);
-    callback quick-mirror();
     callback stop-all();
     callback browse-scrcpy();
     callback detect-scrcpy();
@@ -302,7 +407,6 @@ export component MainWindow inherits Window {
     callback save-update-settings();
     callback check-updates();
     callback install-update();
-    callback select-template(int);
     callback make-default();
     callback edit-template(int);
     callback new-template();
@@ -417,24 +521,24 @@ export component MainWindow inherits Window {
                                         enabled: device.ready;
                                         clicked => { root.explore-device(device.serial); }
                                     }
-                                    Action {
-                                        text: device.running ? "■" : "▷";
-                                        description: device.running ? "Stop mirroring " + device.name : "Mirror " + device.name;
+                                    if device.running: Action {
+                                        text: "■";
+                                        description: "Stop mirroring " + device.name;
                                         width: 36px;
                                         horizontal-stretch: 0;
-                                        enabled: device.ready || device.running;
-                                        clicked => { if device.running { root.stop-device(device.serial); } else { root.mirror-device(device.serial); } }
+                                        clicked => { root.stop-device(device.serial); }
+                                    }
+                                    if !device.running: TemplateStart {
+                                        templates: root.template-names;
+                                        default-template: root.default-template;
+                                        device-name: device.name;
+                                        enabled: device.ready && !root.updating;
+                                        start(index) => { root.mirror-device(device.serial, index); }
                                     }
                                 }
                             }
                         }
                     }
-                    HorizontalLayout {
-                        Label { text: "Template"; horizontal-stretch: 1; }
-                        Action { text: root.selected-template == root.default-template ? "✓ Default" : "Make default"; quiet: true; horizontal-stretch: 0; enabled: root.selected-template != root.default-template; clicked => { root.make-default(); } }
-                    }
-                    ComboBox { model: root.template-names; current-index <=> root.selected-template; selected(value) => { root.select-template(self.current-index); } }
-                    Action { text: "Start Default"; primary: true; enabled: !root.scanning && !root.updating; clicked => { root.quick-mirror(); } }
                     Label { text: root.shortcut + "  ·  Quick Mirror"; horizontal-alignment: center; font-size: 11px; }
                 }
                 if root.page == 1: ScrollView {
@@ -457,7 +561,7 @@ export component MainWindow inherits Window {
                             LineEdit { text <=> root.shortcut-edit; placeholder-text: "Ctrl + Alt + S"; accepted => { root.save-shortcut(); } }
                             Action { text: "Apply"; horizontal-stretch: 0; clicked => { root.save-shortcut(); } }
                         }
-                        Action { text: "Manage templates  →"; clicked => { root.edit-template(root.selected-template); root.page = 2; } }
+                        Action { text: "Manage templates  →"; clicked => { root.edit-template(root.default-template); root.page = 2; } }
                         Rectangle { height: 1px; background: Theme.border; }
                         Label { text: "GUI updates"; }
                         CheckBox { text: "Auto-update this GUI from GitHub"; checked <=> root.auto-update; toggled => { root.save-update-settings(); } }
@@ -490,10 +594,11 @@ export component MainWindow inherits Window {
                     Label { text: "Examples: --no-audio, --stay-awake, --turn-screen-off\nQuote paths with spaces. Select the device in Devices."; wrap: word-wrap; font-size: 11px; }
                     HorizontalLayout {
                         spacing: 6px;
-                        Action { text: "New"; clicked => { root.new-template(); } }
                         Action { text: "Delete"; enabled: root.editing-template >= 0 && root.template-names.length > 1; clicked => { root.delete-template(); } }
-                        Action { text: "Save template"; primary: true; clicked => { root.save-template(); } }
+                        Action { text: root.editing-template == root.default-template ? "✓ Default" : "Make Default"; enabled: root.editing-template >= 0 && root.editing-template != root.default-template; clicked => { root.make-default(); } }
+                        Action { text: "New"; clicked => { root.new-template(); } }
                     }
+                    Action { text: "Save"; primary: true; clicked => { root.save-template(); } }
                     Rectangle { vertical-stretch: 1; }
                 }
             }

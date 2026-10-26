@@ -175,9 +175,6 @@ public:
     ui->set_template_names(
         std::make_shared<slint::VectorModel<slint::SharedString>>(names));
     ui->set_default_template(settings.default_template);
-    if (ui->get_selected_template() < 0 ||
-        ui->get_selected_template() >= (int)names.size())
-      ui->set_selected_template(settings.default_template);
   }
   void edit_template(int index) {
     if (index < 0 || index >= (int)settings.templates.size())
@@ -224,9 +221,8 @@ public:
       return;
     }
     publish_templates();
-    ui->set_selected_template(index);
     edit_template(index);
-    status("Template saved. Use Make default in Devices for Quick Mirror.");
+    status("Template saved. Use Make Default here to use it for Quick Mirror.");
   }
   void delete_template() {
     int index = ui->get_editing_template();
@@ -243,12 +239,11 @@ public:
       settings = previous;
       return;
     }
-    ui->set_selected_template(settings.default_template);
     publish_templates();
     edit_template(settings.default_template);
     status("Template deleted.");
   }
-  void mirror(const std::string &serial, bool use_default = false) {
+  void mirror(const std::string &serial, int template_index) {
     if (installing) {
       status("Wait for the update installation to finish.");
       return;
@@ -267,12 +262,10 @@ public:
              "the phone.");
       return;
     }
-    int index =
-        use_default ? settings.default_template : ui->get_selected_template();
-    if (index < 0 || index >= (int)settings.templates.size())
+    if (template_index < 0 || template_index >= (int)settings.templates.size())
       return;
-    if (scrcpy->start(serial, settings.templates[index].arguments))
-      status("Starting " + d->name + " with " + settings.templates[index].name +
+    if (scrcpy->start(serial, settings.templates[template_index].arguments))
+      status("Starting " + d->name + " with " + settings.templates[template_index].name +
              ".");
   }
   void explore(const std::string &serial) {
@@ -324,10 +317,9 @@ public:
             if (d.ready())
               ready.push_back(d);
           if (ready.size() == 1)
-            c.mirror(ready.front().serial, true);
+            c.mirror(ready.front().serial, c.settings.default_template);
           else {
             c.ui->set_page(0);
-            c.ui->set_selected_template(c.settings.default_template);
             c.show();
             c.status(ready.empty() ? "No ready device. Connect a phone and "
                                      "accept USB debugging."
@@ -579,7 +571,6 @@ public:
       log(error + "\n");
     ui->set_app_version(APP_VERSION);
     ui->set_auto_update(settings.auto_update);
-    ui->set_selected_template(settings.default_template);
     publish_templates();
     edit_template(0);
     auto weak = weak_from_this();
@@ -621,13 +612,12 @@ public:
       ui->set_shortcut("Shortcut unavailable");
     ui->on_refresh_devices([this] { refresh(); });
     ui->on_mirror_device(
-        [this](slint::SharedString serial) { mirror(text(serial)); });
+        [this](slint::SharedString serial, int template_index) { mirror(text(serial), template_index); });
     ui->on_explore_device(
         [this](slint::SharedString serial) { explore(text(serial)); });
     ui->on_stop_device(
         [this](slint::SharedString serial) { scrcpy->stop(text(serial)); });
     ui->on_stop_all([this] { scrcpy->stop(); });
-    ui->on_quick_mirror([this] { refresh(true); });
     ui->on_browse_scrcpy([this] { browse(); });
     ui->on_detect_scrcpy([this] {
       if (scrcpy->detect())
@@ -659,10 +649,8 @@ public:
     ui->on_save_update_settings([this] { save_update_settings(); });
     ui->on_check_updates([this] { update(false); });
     ui->on_install_update([this] { update(true); });
-    ui->on_select_template(
-        [this](int index) { ui->set_selected_template(index); });
     ui->on_make_default([this] {
-      int index = ui->get_selected_template();
+      int index = ui->get_editing_template();
       if (index < 0 || index >= (int)settings.templates.size())
         return;
       int previous = settings.default_template;

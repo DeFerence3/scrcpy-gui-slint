@@ -37,6 +37,14 @@ int main(int argc, char **argv) {
     ui->show();
     std::filesystem::path output = argc > 1 ? argv[1] : "ui-previews";
     std::filesystem::create_directories(output);
+    auto capture = [&](const char *name) {
+      auto snapshot = ui->window().take_snapshot();
+      if (!snapshot) throw std::runtime_error("Could not render preview");
+      std::ofstream image(output / (std::string(name) + ".ppm"), std::ios::binary);
+      image << "P6\n" << snapshot->width() << ' ' << snapshot->height() << "\n255\n";
+      for (const auto &p : *snapshot) { image.put(p.r); image.put(p.g); image.put(p.b); }
+      if (!image) throw std::runtime_error("Could not write preview");
+    };
     for (int page=0; page<4; ++page) {
       ui->set_page(page == 3 ? 0 : page);
       if (page == 3) ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>());
@@ -75,12 +83,63 @@ int main(int argc, char **argv) {
     ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, galaxy}));
     ui->window().take_snapshot();
     std::string mirrored;
-    ui->on_mirror_device([&](slint::SharedString serial) { mirrored = serial.data(); });
-    click(373, 136);
-    if (mirrored != "USB123") throw std::runtime_error("Mirror button did not select its device");
+    int mirrored_template = -1;
+    ui->on_mirror_device([&](slint::SharedString serial, int index) { mirrored = serial.data(); mirrored_template = index; });
+    click(300, 136);
+    if (mirrored != "USB123" || mirrored_template != 0) throw std::runtime_error("Start button did not select its device and default template");
+    mirrored.clear(); mirrored_template = -1;
+    click(375, 136);
+    if (!mirrored.empty()) throw std::runtime_error("Opening the template menu started mirroring");
+    capture("device-templates");
+    click(210, 245);
+    capture("device-templates-clicked");
+    if (mirrored != "USB123" || mirrored_template != 2) throw std::runtime_error("Template menu did not start the chosen configuration: " + mirrored + " / " + std::to_string(mirrored_template));
+    click(300, 209);
+    if (mirrored != "192.168.1.15:5555" || mirrored_template != 0) throw std::runtime_error("Choosing a template changed another device's default");
+    mirrored.clear();
+    click(375, 209);
+    ui->window().dispatch_key_press_event(slint::platform::key_codes::DownArrow);
+    ui->window().dispatch_key_release_event(slint::platform::key_codes::DownArrow);
+    if (!mirrored.empty()) throw std::runtime_error("Navigating templates started mirroring before confirmation");
+    ui->window().dispatch_key_press_event(slint::platform::key_codes::Return);
+    ui->window().dispatch_key_release_event(slint::platform::key_codes::Return);
+    if (mirrored != "192.168.1.15:5555" || mirrored_template != 1) throw std::runtime_error("Keyboard template selection did not start the chosen device and configuration");
+    mirrored.clear();
+    click(375, 136);
+    ui->window().dispatch_key_press_event(slint::platform::key_codes::Escape);
+    ui->window().dispatch_key_release_event(slint::platform::key_codes::Escape);
+    click(210, 245);
+    if (!mirrored.empty()) throw std::runtime_error("Dismissing the menu started mirroring");
+    ui->set_page(2);
+    ui->set_editing_template(1);
+    ui->set_template_name("Lightweight (720p, 30fps)");
+    ui->set_template_arguments("--max-size=1280 --max-fps=30");
+    capture("templates-make-default");
+    int made_default = -1;
+    bool saved = false;
+    ui->on_make_default([&] { made_default = ui->get_editing_template(); ui->set_default_template(made_default); });
+    ui->on_save_template([&] { saved = true; });
+    ui->on_new_template([&] { ui->set_editing_template(-1); ui->set_template_name(""); ui->set_template_arguments(""); });
+    click(210, 337);
+    if (made_default != 1) throw std::runtime_error("Make Default did not use the template being edited");
+    click(210, 382);
+    if (!saved) throw std::runtime_error("Save did not respond on its separate row");
+    click(350, 337);
+    made_default = -1;
+    click(210, 337);
+    if (ui->get_editing_template() != -1 || made_default != -1) throw std::runtime_error("An unsaved template could be made default");
+    ui->set_page(0);
+    ui->window().take_snapshot();
+    click(300, 136);
+    if (mirrored != "USB123" || mirrored_template != 1) throw std::runtime_error("Device start did not follow the changed default");
+    ui->window().set_size(slint::PhysicalSize({380, 660}));
+    capture("devices-small");
+    ui->window().set_size(slint::PhysicalSize({420, 690}));
+    ui->set_default_template(0);
+    ui->window().take_snapshot();
     std::string explored;
     ui->on_explore_device([&](slint::SharedString serial) { explored = serial.data(); });
-    click(327, 136);
+    click(219, 136);
     if (explored != "USB123") throw std::runtime_error("Files button did not select its device");
     pixel.running = true;
     ui->set_devices(std::make_shared<slint::VectorModel<DeviceRow>>(std::vector<DeviceRow>{pixel, locked}));
@@ -90,7 +149,7 @@ int main(int argc, char **argv) {
     click(373, 136);
     if (stopped != "USB123") throw std::runtime_error("Icon Stop button did not select its device");
     explored.clear(); mirrored.clear();
-    click(327, 209); click(373, 209);
+    click(219, 209); click(300, 209); click(375, 209);
     if (!explored.empty() || !mirrored.empty()) throw std::runtime_error("Unavailable device actions were enabled");
 
     auto files = ui;
@@ -157,6 +216,6 @@ int main(int argc, char **argv) {
     files->set_file_entries(std::make_shared<slint::VectorModel<FileRow>>());
     files->set_file_status("0 items · /sdcard/Download"); capture_files("files-empty");
     files->set_file_failed(true); files->set_file_ready(false); files->set_file_status("Permission denied: /data/private"); capture_files("files-error");
-    std::cout << "Rendered all views; same-window explorer, icon navigation, back, transfers and cancellation hit targets passed.\n";
+    std::cout << "Rendered all views; template start/menu/default controls, same-window explorer, navigation, transfers and cancellation hit targets passed.\n";
   } catch (const std::exception &e) { std::cerr << e.what() << '\n'; return 1; }
 }

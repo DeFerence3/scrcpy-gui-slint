@@ -10,9 +10,9 @@ Currently supports **Windows only**. Install scrcpy and ADB separately; they are
 2. Install the GUI setup package, or extract the portable ZIP and run `scrcpy-ui.exe`. The installer starts the app in the tray and enables startup at sign-in.
 3. Enable USB debugging on your Android device, connect it, and accept the authorization prompt.
 4. Open the tray icon. Click the **Settings gear** beside the pin icon and browse to `scrcpy.exe` if it was not detected automatically.
-5. In **Devices**, choose a template and click the **play icon** next to your device to mirror it. The icon changes to Stop while mirroring.
+5. In **Devices**, click the template name on a device card to start mirroring, or click its dropdown arrow and choose another template to start that configuration. The control changes to Stop while mirroring.
 
-Use **Make default** to choose the preset for **Start Default** and **Quick Mirror**. The default shortcut is **Ctrl + Alt + S**; with multiple ready devices, the app asks you to choose one.
+Use **Make Default** in **Manage templates** to choose the preset for device buttons and **Quick Mirror**. The default shortcut is **Ctrl + Alt + S**; with multiple ready devices, the app asks you to choose one.
 
 Closing the window hides it to the tray and resets it to **Devices** for the next opening. The **pin icon** keeps it open when focus changes and highlights while pinned; **Quit app** exits. Portable copies do not enable startup at sign-in.
 
@@ -36,6 +36,8 @@ Preferences are stored in `%APPDATA%\scrcpy-tray\settings.dat`.
 Requirements: Windows, Git, CMake 3.21+, Ninja, and Visual Studio C++ build tools with the Windows SDK. Install stable Rust if building Slint from source. CMake uses an installed Slint package when available; otherwise it downloads and builds Slint.
 
 From the repository directory in **Visual Studio Developer PowerShell**:
+
+For a Debug build that stops the previous local instance and launches the app, run `./run.ps1`. The script configures the build automatically, builds the app target and its dependencies, and stops on errors. Use `./run.ps1 -Configuration Release` for Release. The commands below also build the test targets.
 
 ```powershell
 cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release `

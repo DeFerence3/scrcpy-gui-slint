@@ -17,6 +17,16 @@ if (NOT Slint_FOUND)
   FetchContent_MakeAvailable(Slint)
 endif (NOT Slint_FOUND)
 
+# Embed compiler debug symbols in object files to avoid compiler PDB API
+# failures (C1090) on vc*.pdb. The linker still produces the final app PDB.
+# CMake 3.21 stores /Zi in these flags (the format property requires 3.25).
+if(MSVC)
+  foreach(config IN ITEMS DEBUG RELWITHDEBINFO)
+    string(REGEX REPLACE "(^|[ \t])[-/]Z[iI]([ \t]|$)" "\\1/Z7\\2"
+      CMAKE_CXX_FLAGS_${config} "${CMAKE_CXX_FLAGS_${config}}")
+  endforeach()
+endif()
+
 add_library(scrcpy-core STATIC src/AppCore.cpp src/Platform.cpp src/DeviceFiles.cpp src/FileDropTarget.cpp)
 target_compile_features(scrcpy-core PUBLIC cxx_std_17)
 target_include_directories(scrcpy-core PUBLIC src)
@@ -96,6 +106,9 @@ if(BUILD_TESTING)
   set_tests_properties(scrcpy-startup PROPERTIES SKIP_RETURN_CODE 77 RUN_SERIAL TRUE TIMEOUT 30)
   find_program(POWERSHELL_EXECUTABLE powershell)
   if(POWERSHELL_EXECUTABLE)
+    add_test(NAME scrcpy-run-script COMMAND "${POWERSHELL_EXECUTABLE}" -NoProfile -NonInteractive -ExecutionPolicy Bypass
+      -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_tests.ps1"
+      -RunScript "${CMAKE_CURRENT_SOURCE_DIR}/run.ps1" -WorkDirectory "${CMAKE_BINARY_DIR}/run-tests")
     add_test(NAME scrcpy-updater COMMAND "${POWERSHELL_EXECUTABLE}" -NoProfile -NonInteractive -ExecutionPolicy Bypass
       -File "${CMAKE_CURRENT_SOURCE_DIR}/tests/updater_tests.ps1"
       -UpdateScript "${CMAKE_CURRENT_SOURCE_DIR}/scripts/update.ps1"
