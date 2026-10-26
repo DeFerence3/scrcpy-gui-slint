@@ -1,7 +1,7 @@
 #include "main.h"
-#include "Scrcpy.h"
-#include "FileExplorer.h"
 #include "DeviceModel.h"
+#include "FileExplorer.h"
+#include "Scrcpy.h"
 #include <algorithm>
 #include <chrono>
 #include <fstream>
@@ -10,6 +10,7 @@
 #include <shobjidl.h>
 #include <sstream>
 #include <thread>
+
 
 #ifndef APP_VERSION
 #define APP_VERSION "0.1.0"
@@ -94,12 +95,17 @@ public:
       hide();
       return;
     }
+    ui->window().set_minimized(false);
     ui->show();
     visible = true;
     focused = false;
     shown_at = GetTickCount64();
     if (HWND hwnd = FindWindowW(nullptr, WindowTitle)) {
-      if (explorer) explorer->attach(hwnd);
+      // Restore before measuring: a minimized window has a tiny rectangle,
+      // which would otherwise anchor the full window below the work area.
+      ShowWindow(hwnd, IsIconic(hwnd) ? SW_RESTORE : SW_SHOW);
+      if (explorer)
+        explorer->attach(hwnd);
       RECT area{}, rect{};
       POINT cursor{};
       GetCursorPos(&cursor);
@@ -115,12 +121,12 @@ public:
           std::max<LONG>(area.left, area.right - (rect.right - rect.left) - 12),
           std::max<LONG>(area.top, area.bottom - (rect.bottom - rect.top) - 12),
           0, 0, SWP_NOSIZE);
-      ShowWindow(hwnd, SW_SHOW);
       SetForegroundWindow(hwnd);
     }
   }
   void hide() {
-    if (explorer) explorer->detach();
+    if (explorer)
+      explorer->detach();
     ui->hide();
     ui->set_page(0);
     visible = focused = false;
@@ -132,7 +138,8 @@ public:
     device_timer.stop();
     update_timer.stop();
     scrcpy->stop();
-    if (explorer) explorer->shutdown();
+    if (explorer)
+      explorer->shutdown();
     Shell_NotifyIconW(NIM_DELETE, &icon);
     if (hotkey_id)
       UnregisterHotKey(tray, hotkey_id);
@@ -267,20 +274,39 @@ public:
     if (template_index < 0 || template_index >= (int)settings.templates.size())
       return;
     if (scrcpy->start(serial, settings.templates[template_index].arguments))
-      status("Starting " + d->name + " with " + settings.templates[template_index].name +
-             ".");
+      status("Starting " + d->name + " with " +
+             settings.templates[template_index].name + ".");
   }
   void explore(const std::string &serial) {
-    if (installing) { status("Wait for the update installation to finish."); return; }
-    auto device = std::find_if(devices.begin(), devices.end(), [&](const auto &d) { return d.serial == serial; });
-    if (device == devices.end() || !device->ready()) {
-      status("That device is not ready. Refresh and accept USB debugging on the phone.");
+    if (installing) {
+      status("Wait for the update installation to finish.");
       return;
     }
-    if (!explorer) explorer = FileExplorer::create(ui);
-    explorer->open(FindWindowW(nullptr, WindowTitle), scrcpy->adb_path(), serial, device->name);
+    auto device =
+        std::find_if(devices.begin(), devices.end(),
+                     [&](const auto &d) { return d.serial == serial; });
+    if (device == devices.end() || !device->ready()) {
+      status("That device is not ready. Refresh and accept USB debugging on "
+             "the phone.");
+      return;
+    }
+    if (!explorer)
+      explorer = FileExplorer::create(ui);
+    explorer->open(FindWindowW(nullptr, WindowTitle), scrcpy->adb_path(),
+                   serial, device->name);
+  }
+  bool show_if_mirroring() {
+    if (sessions.empty())
+      return false;
+    pending_quick = false;
+    ui->set_page(0);
+    show();
+    status("Mirroring is already active. Manage your devices.");
+    return true;
   }
   void refresh(bool quick = false, bool silent = false) {
+    if (quick && show_if_mirroring())
+      return;
     pending_quick |= quick;
     if (ui->get_scanning()) {
       if (!silent)
@@ -304,6 +330,9 @@ public:
         c.ui->set_refreshing(false);
         bool quick = c.pending_quick;
         c.pending_quick = false;
+        // A session may have started while this device scan was in flight.
+        if (quick && c.show_if_mirroring())
+          return;
         if (!error.empty()) {
           if (!silent || quick) {
             c.log("[adb] " + error + "\n");
@@ -455,9 +484,10 @@ public:
   void update(bool install) {
     if (ui->get_updating())
       return;
-    if (install &&
-        (!sessions.empty() || picking || ui->get_scanning() || pending_quick || (explorer && explorer->busy()))) {
-      status("Stop mirroring and wait for device discovery and file transfers before updating.");
+    if (install && (!sessions.empty() || picking || ui->get_scanning() ||
+                    pending_quick || (explorer && explorer->busy()))) {
+      status("Stop mirroring and wait for device discovery and file transfers "
+             "before updating.");
       return;
     }
     if (install && available_version.empty())
@@ -470,7 +500,8 @@ public:
     }
     ui->set_updating(true);
     installing = install;
-    if (explorer) explorer->set_installing(install);
+    if (explorer)
+      explorer->set_installing(install);
     auto_install_attempted = install;
     ui->set_update_status(install ? "Downloading and verifying the GUI update…"
                                   : "Checking GitHub releases…");
@@ -505,7 +536,8 @@ public:
       post(weak, [result, install](Controller &c) {
         c.ui->set_updating(false);
         c.installing = false;
-        if (c.explorer) c.explorer->set_installing(false);
+        if (c.explorer)
+          c.explorer->set_installing(false);
         std::istringstream lines(result.text);
         std::string line, marker, value;
         while (std::getline(lines, line)) {
@@ -621,7 +653,9 @@ public:
       ui->set_shortcut("Shortcut unavailable");
     ui->on_refresh_devices([this] { refresh(); });
     ui->on_mirror_device(
-        [this](slint::SharedString serial, int template_index) { mirror(text(serial), template_index); });
+        [this](slint::SharedString serial, int template_index) {
+          mirror(text(serial), template_index);
+        });
     ui->on_explore_device(
         [this](slint::SharedString serial) { explore(text(serial)); });
     ui->on_stop_device(
@@ -642,7 +676,10 @@ public:
         status("Invalid executable path. Select an existing scrcpy.exe.");
     });
     ui->on_restart_adb([this, weak] {
-      if (explorer && explorer->busy()) { status("Wait for the file operation to finish before restarting ADB."); return; }
+      if (explorer && explorer->busy()) {
+        status("Wait for the file operation to finish before restarting ADB.");
+        return;
+      }
       if (ui->get_scanning())
         return;
       ui->set_scanning(true);
@@ -689,7 +726,8 @@ public:
     ui->on_hide_to_tray([this] { hide(); });
     ui->on_quit_app([this] { quit(); });
     ui->window().on_close_requested([this] {
-      if (explorer) explorer->detach();
+      if (explorer)
+        explorer->detach();
       ui->set_page(0);
       visible = focused = false;
       hidden_at = GetTickCount64();
@@ -698,7 +736,8 @@ public:
     focus_timer.start(
         slint::TimerMode::Repeated, std::chrono::milliseconds(100), [this] {
           // Keep Files visible while selecting or dragging files from Explorer.
-          if (!visible || picking || ui->get_pinned() || ui->get_page() == 3 || (explorer && explorer->busy()))
+          if (!visible || picking || ui->get_pinned() || ui->get_page() == 3 ||
+              (explorer && explorer->busy()))
             return;
           HWND hwnd = FindWindowW(nullptr, WindowTitle),
                fg = GetForegroundWindow();
@@ -832,7 +871,8 @@ int main(int argc, char **argv) {
   }
   if (single)
     CloseHandle(single);
-  if (SUCCEEDED(ole)) OleUninitialize();
+  if (SUCCEEDED(ole))
+    OleUninitialize();
   return result;
 }
 int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int) {

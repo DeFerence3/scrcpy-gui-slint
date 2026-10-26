@@ -48,7 +48,11 @@ int wmain(int argc, wchar_t **wide_args) {
       std::ofstream(destination / "destination.txt", std::ios::binary) << argv[2] << '\n' << argv[5];
     } else { std::cerr << "Invalid ADB file arguments"; return 1; }
   } else if (first == "devices") {
-    std::cout << "List of devices attached\nUSB123 device model:Pixel_7_Pro\n192.168.1.15:5555 device model:Galaxy_S23\nLOCK unauthorized\n";
+    std::ifstream devices(app::executable_directory() / "fixture-devices.txt");
+    if (devices)
+      std::cout << devices.rdbuf();
+    else
+      std::cout << "List of devices attached\nUSB123 device model:Pixel_7_Pro\n192.168.1.15:5555 device model:Galaxy_S23\nLOCK unauthorized\n";
   } else if (first == "--version") std::cout << "scrcpy fixture\n";
   else if (first == "--updated") std::ofstream("restarted.txt") << "updated";
   else if (first == "--startup") std::ofstream("started.txt") << "--startup";
@@ -65,6 +69,7 @@ int wmain(int argc, wchar_t **wide_args) {
     DestroyWindow(tray);
   }
   else if (first.rfind("--serial=", 0) == 0) {
+    std::ofstream(app::executable_directory() / "fixture-mirrors.txt", std::ios::app) << first << '\n';
     for (int i=1; i<argc; ++i) std::cout << argv[i] << '\n';
     std::cout.flush();
     Sleep(10000);
