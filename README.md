@@ -76,6 +76,8 @@ git push origin v0.0.3
 
 Use `vMAJOR.MINOR.PATCH` (or `vMAJOR.MINOR.PATCH.REVISION`) and a version higher than the previous release. The distribution workflow builds and tests Windows x64, packages the portable ZIP and installer, then publishes a GitHub release with both packages and `SHA256SUMS.txt`. The app version comes from the tag. Publishing uses the repository's `PAT` Actions secret, which must have write access to repository contents (or the `repo` scope for a classic PAT).
 
+Pushes to `master` also build and test the app to warm the compiled Slint SDK cache. Let that run finish before pushing a release tag: GitHub lets tags restore default-branch caches, but isolates caches created by different tags. A cache hit skips the Slint checkout, Rust setup, and Slint build; the app and tests always build from the checked-out source. The cache key includes the platform, pinned Slint/Rust versions, and workflow hash, so changes to SDK build options invalidate it. Cache misses (including eviction) rebuild the SDK automatically. Use **Actions → Build and release distribution → Run workflow** on `master` to warm it manually; branch and manual runs do not publish releases.
+
 The app checks the latest published, non-prerelease GitHub release and offers an update only when its version is newer. Keep the asset named `scrcpy-gui-windows-x64.zip`; the updater verifies its GitHub SHA-256 digest before installation. Workflow artifacts alone are not visible to the updater.
 
 To test update detection locally, configure a build with a lower version, such as `"-DSCRCPY_VERSION=0.0.1"`, rebuild, and use **Settings → Check updates**. Builds made before the repository address was corrected must first be rebuilt or manually replaced with a current release.

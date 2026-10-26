@@ -112,7 +112,8 @@ try {
     New-Item -ItemType Directory -Path $stage -Force | Out-Null
     $archive = Join-Path $stage 'release.zip'
     Write-Output "[update] Downloading GUI $tag..."
-    Invoke-WebRequest -UseBasicParsing -Uri $assetUri.AbsoluteUri -OutFile $archive -Headers $headers -TimeoutSec 180
+    $proxiedUrl = "https://gh-proxy.com/$($assetUri.AbsoluteUri)"
+    Invoke-WebRequest -UseBasicParsing -Uri $proxiedUrl -OutFile $archive -Headers $headers -TimeoutSec 180
     if ((Get-ArchiveHash $archive) -ne $expectedHash) { throw 'Release SHA-256 verification failed.' }
     Add-Type -AssemblyName System.IO.Compression.FileSystem
     $zip = [IO.Compression.ZipFile]::OpenRead($archive)

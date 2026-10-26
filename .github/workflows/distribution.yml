@@ -2,8 +2,12 @@ name: Build and release distribution
 
 on:
   push:
+    # Tags can restore default-branch caches, but not another tag's cache.
+    branches:
+      - master
     tags:
       - 'v*'
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -22,35 +26,71 @@ jobs:
       run:
         shell: pwsh
     env:
-      CARGO_BUILD_JOBS: '2'
       CARGO_TERM_COLOR: always
+      SLINT_VERSION: '1.18.1'
+      RUST_TOOLCHAIN: '1.99.1'
 
     steps:
-      - name: Check out tagged source
+      - name: Check out source
         uses: actions/checkout@v7
         with:
           persist-credentials: false
 
-      - name: Read release version
+      - name: Read build settings
         run: |
-          if ($env:GITHUB_REF_NAME -cnotmatch '^v(\d+\.\d+\.\d+(?:\.\d+)?)$') {
-              throw 'Use vMAJOR.MINOR.PATCH (or vMAJOR.MINOR.PATCH.REVISION), as required by the updater.'
+          $version = '0.0.0'
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+              if ($env:GITHUB_REF_NAME -cnotmatch '^v(\d+\.\d+\.\d+(?:\.\d+)?)$') {
+                  throw 'Use vMAJOR.MINOR.PATCH (or vMAJOR.MINOR.PATCH.REVISION), as required by the updater.'
+              }
+              $version = $Matches[1]
           }
-          "RELEASE_VERSION=$($Matches[1])" >> $env:GITHUB_ENV
+          "RELEASE_VERSION=$version" >> $env:GITHUB_ENV
+          "CARGO_BUILD_JOBS=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
+          "CMAKE_BUILD_PARALLEL_LEVEL=$env:NUMBER_OF_PROCESSORS" >> $env:GITHUB_ENV
+
+      # Cache the installed SDK (compiler, headers, DLL and import library), not
+      # the app or a CMake build tree with runner-specific paths/timestamps.
+      # The workflow hash invalidates the SDK when its build options change.
+      - name: Cache Slint SDK
+        id: slint-cache
+        uses: actions/cache@v6
+        with:
+          path: build/slint-sdk
+          key: slint-sdk-v1-windows-2022-${{ runner.arch }}-vs2022-${{ env.SLINT_VERSION }}-rust-${{ env.RUST_TOOLCHAIN }}-${{ hashFiles('.github/workflows/distribution.yml') }}
 
       - name: Check out pinned Slint source
+        if: steps.slint-cache.outputs.cache-hit != 'true'
         uses: actions/checkout@v7
         with:
           repository: slint-ui/slint
-          ref: v1.18.1
+          ref: v${{ env.SLINT_VERSION }}
           path: build/deps/slint
           persist-credentials: false
 
       - name: Set up Rust
-        run: |
-          rustup toolchain install stable --profile minimal
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          rustup default stable
+        if: steps.slint-cache.outputs.cache-hit != 'true'
+        run: rustup toolchain install $env:RUST_TOOLCHAIN --profile minimal --no-self-update
+
+      - name: Configure Slint SDK
+        if: steps.slint-cache.outputs.cache-hit != 'true'
+        run: >-
+          cmake -S build/deps/slint/api/cpp -B build/slint-build -G "Visual Studio 17 2022" -A x64
+          "-DCMAKE_INSTALL_PREFIX=$env:GITHUB_WORKSPACE/build/slint-sdk"
+          "-DRust_TOOLCHAIN=$env:RUST_TOOLCHAIN"
+          -DBUILD_SHARED_LIBS=ON
+          -DSLINT_BUILD_TESTING=OFF
+          -DSLINT_FEATURE_BACKEND_QT=OFF
+          -DSLINT_FEATURE_RENDERER_SKIA=OFF
+          -DSLINT_FEATURE_RENDERER_SOFTWARE=ON
+
+      - name: Build Slint SDK
+        if: steps.slint-cache.outputs.cache-hit != 'true'
+        run: cmake --build build/slint-build --config Release
+
+      - name: Install Slint SDK
+        if: steps.slint-cache.outputs.cache-hit != 'true'
+        run: cmake --install build/slint-build --config Release
 
       - name: Locate NSIS
         run: |
@@ -64,15 +104,14 @@ jobs:
         run: >-
           cmake -S . -B build -G "Visual Studio 17 2022" -A x64
           "-DSCRCPY_VERSION=$env:RELEASE_VERSION"
-          "-DFETCHCONTENT_SOURCE_DIR_SLINT=$env:GITHUB_WORKSPACE/build/deps/slint"
+          "-DSlint_DIR=$env:GITHUB_WORKSPACE/build/slint-sdk/lib/cmake/Slint"
+          -DCMAKE_REQUIRE_FIND_PACKAGE_Slint=ON
           "-DSCRCPY_MAKENSIS_EXECUTABLE=$env:NSIS_EXECUTABLE"
           -DBUILD_TESTING=ON
-          -DSLINT_FEATURE_BACKEND_QT=OFF
-          -DSLINT_FEATURE_RENDERER_SKIA=OFF
           -DSLINT_FEATURE_RENDERER_SOFTWARE=ON
 
       - name: Build Release
-        run: cmake --build build --config Release --parallel 2
+        run: cmake --build build --config Release
 
       - name: Run tests
         env:
@@ -80,14 +119,17 @@ jobs:
         run: ctest --test-dir build -C Release --output-on-failure
 
       - name: Package portable ZIP
+        if: startsWith(github.ref, 'refs/tags/')
         run: cpack --config build/CPackConfig.cmake -C Release -G ZIP -B build/packages
 
       - name: Package installer
+        if: startsWith(github.ref, 'refs/tags/')
         run: >-
           cpack --config build/CPackConfig.cmake -C Release -G NSIS -B build/packages
           "-DCPACK_NSIS_EXECUTABLE=$env:NSIS_EXECUTABLE"
 
       - name: Write checksums
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           $packages = @(
               'build/packages/scrcpy-gui-windows-x64.zip',
@@ -101,6 +143,7 @@ jobs:
           ($checksums -join "`n") + "`n" | Set-Content -LiteralPath build/packages/SHA256SUMS.txt -Encoding utf8 -NoNewline
 
       - name: Upload distribution
+        if: startsWith(github.ref, 'refs/tags/')
         uses: actions/upload-artifact@v7
         with:
           name: scrcpy-gui-${{ github.ref_name }}-windows-x64
@@ -123,6 +166,7 @@ jobs:
 
   release:
     name: Publish GitHub release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/')
     needs: windows
     runs-on: ubuntu-latest
 
